@@ -26,14 +26,26 @@ You can also manually edit your composer.json file
 
 #### Example
 ```
-$conn = new DbConnectorMySQL($host, $username, $password, $db_name);
 
-$qcache_enabled = true;
+$max_cache_files = 1000;
 
-$qc = new QCache($conn, "/tmp/qcache", $qcache_enabled);
+qc = new QCache(
+    'mysql',
+    $host_name, $user_name, $password, $database_name,
+    '/path_to/my_cache_folder',
+    $max_cache_files
+);
 
-$affected_tables = ["my_table"];
+$sql = "SELECT * FROM contact";
+$tables = ['contact'];
+$description = "An optional description";
 
-$results = $this->qc->query("SELECT * FROM my_table", $affected_tables);
+/** SqlResultSet $result */
+$result = $this->qc->query($sql, $tables, __FILE__, __LINE__, $description);
 
+while ($row = $result->fetch_assoc()) {
+    ...
+}
+
+$result->free_result();
 ```

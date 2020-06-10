@@ -69,12 +69,6 @@ class SqlResultSet
         return $ret;
     }
 
-    public function free_result()
-    {
-        $this->rows = [];
-        $this->num_rows = 0;
-    }
-
     /**
      * @param int $type
      * @return array|null
@@ -92,5 +86,14 @@ class SqlResultSet
         }
 
         return $rows;
+    }
+
+    /**
+     * Release resources.
+     */
+    public function free_result()
+    {
+        $this->rows = [];
+        $this->num_rows = 0;
     }
 }
