@@ -206,12 +206,12 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
 
         if ($cache_save_needed) {
             // sort by key (table names)
-            ksort($table_times);
+            ksort($cached_table_times);
 
             // lock & save
             $rl_key = $this->reslock->lock($this->table_times_file);
             {
-                SerializedFileIO::writeSerializedArray($this->table_times_file, $table_times);
+                SerializedFileIO::writeSerializedArray($this->table_times_file, $cached_table_times);
             }
             $this->reslock->unlock($rl_key);
         }
