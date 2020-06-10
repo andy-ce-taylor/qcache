@@ -1,0 +1,24 @@
+{
+    "name": "acet/qcache",
+    "description": "Database query caching",
+    "keywords": [
+        "PHP", "sql", "mysql", "mssql", "sql server", "sqlite", "query", "cache", "caching"
+    ],
+    "type": "library",
+    "license": "GPL-3.0",
+    "authors": [{
+        "name": "Andy Taylor",
+        "email": "andy.ce.taylor@gmail.com"
+    }],
+    "require": {
+        "acet/reslock": "*",
+        "php": "^5.4 || ^7.0"
+    },
+    "require-dev": {},
+    "autoload": {
+        "psr-4": {
+            "acet\\qcache\\": "src/"
+        }
+    },
+    "extra": {}
+}
