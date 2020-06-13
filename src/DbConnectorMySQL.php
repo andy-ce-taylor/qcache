@@ -20,10 +20,16 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
      * @param string  $user
      * @param string  $pass
      * @param string  $database_name
+     * @throws QCacheConnectionException
      */
     function __construct($host, $user, $pass, $database_name)
     {
         $this->conn = new mysqli($host, $user, $pass, $database_name);
+
+        if ($this->conn->connect_errno) {
+            throw new QCacheConnectionException("MySQL connection error: " . $this->conn->connect_errno);
+        }
+
         $this->database_name = $database_name;
     }
 

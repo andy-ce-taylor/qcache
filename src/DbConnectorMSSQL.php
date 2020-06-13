@@ -27,6 +27,7 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
      * @param string  $database_name
      * @param string  $table_times_file;
      * @param ResLock $reslock
+     * @throws QCacheConnectionException
      */
     function __construct($host, $user, $pass, $database_name, $table_times_file, $reslock)
     {
@@ -38,6 +39,10 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
                 "PWD"       => $pass
             ]
         );
+
+        if (!$this->conn) {
+            throw new QCacheConnectionException("MSSQL connection error");
+        }
 
         $this->database_name = $database_name;
         $this->table_times_file = $table_times_file;
@@ -217,6 +222,19 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
         }
 
         return $data;
+    }
+
+    /**
+     * Returns
+     *
+     * @return string
+     */
+    public function getSQLServerStartTime()
+    {
+        $sql = "SELECT sqlserver_start_time FROM sys.dm_os_sys_info";
+
+        $result = sqlsrv_query($this->conn, $sql);
+        return date_format(sqlsrv_fetch_array($result, SQLSRV_FETCH_ASSOC)['sqlserver_start_time'], 'Y-m-d H:i:s');
     }
 
     /**

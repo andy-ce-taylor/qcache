@@ -69,9 +69,14 @@ class QCache
      * @param string  $qcache_folder
      * @param int     $max_qcache_files
      * @param bool    $qcache_enabled
+     * @throws QCacheConnectionException
      */
-    function __construct($db_type, $db_host, $db_user, $db_pass, $db_name, $qcache_folder, $max_qcache_files, $qcache_enabled=true)
+    function __construct($db_type, $db_host, $db_user, $db_pass, $db_name, $qcache_folder, $max_qcache_files=1000, $qcache_enabled=true)
     {
+        if (empty($db_type) || empty($db_host) || empty($db_user) || empty($db_pass) || empty($db_name) || empty($qcache_folder)) {
+            throw new QCacheConnectionException("Missing database connection details");
+        }
+
         $this->qcache_enabled = $qcache_enabled;
         $this->qcache_folder = str_replace(["\\", '/'], DIRECTORY_SEPARATOR, rtrim($qcache_folder, "\\ ./"));
         $this->qcache_info_file = $this->qcache_folder . DIRECTORY_SEPARATOR . self::QCACHE_INFO_FILE_NAME;
@@ -328,29 +333,26 @@ class QCache
     }
 
     /**
-     * @param string  $db_type
-     * @param string  $db_host
-     * @param string  $db_user
-     * @param string  $db_pass
-     * @param string  $db_name
+     * @param string $db_type
+     * @param string $db_host
+     * @param string $db_user
+     * @param string $db_pass
+     * @param string $db_name
      * @return DbConnectorMySQL|DbConnectorMSSQL
+     * @throws QCacheConnectionException
      */
     private function setConnection($db_type, $db_host, $db_user, $db_pass, $db_name)
     {
         switch ($db_type) {
             case 'mysql':
                 return new DbConnectorMySQL($db_host, $db_user, $db_pass, $db_name);
-                break;
 
             case 'mssql':
-                $file = $this->qcache_folder . DIRECTORY_SEPARATOR . self::MSSQL_TABLES_INFO_FILE_NAME;
+                $file = $this->qcache_folder.DIRECTORY_SEPARATOR.self::MSSQL_TABLES_INFO_FILE_NAME;
                 return new DbConnectorMSSQL($db_host, $db_user, $db_pass, $db_name, $file, $this->reslock);
-                break;
-
-            default:
-                // whoops!
         }
 
+        // whoops!
         return null;
     }
 
