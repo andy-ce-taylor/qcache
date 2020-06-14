@@ -18,12 +18,12 @@ class SqlResultSet
     }
 
     /**
-     * @return array|null
+     * @return array
      */
     public function fetch_row()
     {
         if ($this->num_rows == 0) {
-            return null;
+            return [];
         }
 
         $row = $this->rows[--$this->num_rows];
@@ -32,12 +32,12 @@ class SqlResultSet
     }
 
     /**
-     * @return array|null
+     * @return array
      */
     public function fetch_assoc()
     {
         if ($this->num_rows == 0) {
-            return null;
+            return [];
         }
 
         $row = $this->rows[--$this->num_rows];
@@ -47,12 +47,12 @@ class SqlResultSet
 
     /**
      * @param int $type
-     * @return array|null
+     * @return array
      */
     public function fetch_array($type=MYSQLI_BOTH)
     {
         if ($this->num_rows == 0) {
-            return null;
+            return [];
         }
 
         $row = $this->rows[--$this->num_rows];
@@ -71,12 +71,12 @@ class SqlResultSet
 
     /**
      * @param int $type
-     * @return array|null
+     * @return array
      */
     public function fetch_all($type=MYSQLI_BOTH)
     {
         if ($this->num_rows == 0) {
-            return null;
+            return [];
         }
 
         $rows = [];
