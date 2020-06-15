@@ -1,4 +1,7 @@
-<?php /** @noinspection SqlDialectInspection */
+<?php
+/** @noinspection PhpComposerExtensionStubsInspection */
+/** @noinspection SqlDialectInspection */
+
 namespace acet\qcache;
 
 use acet\ResLock\ResLock;

@@ -1,4 +1,6 @@
 <?php
+/** @noinspection PhpComposerExtensionStubsInspection */
+
 namespace acet\qcache;
 
 class SqlResultSet
