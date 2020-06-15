@@ -10,9 +10,9 @@ class QCache
     const MSSQL_TABLES_INFO_FILE_NAME = 'mssql_tables_info.json';
 
     // Weightings are used when computing cache importance
-    const AT_FACTOR             = 1.0;          // access times (may need recency amplification (sines) rather than straight-line factors)
-    const IM_FACTOR             = 0.5;          // Impressions
-    const CA_FACTOR             = 3.5;          // Cumulative average (time cost)
+    const AT_FACTOR = 1.0;          // access times (may need recency amplification (sines) rather than straight-line factors)
+    const IM_FACTOR = 0.5;          // Impressions
+    const CA_FACTOR = 3.5;          // Cumulative average (time cost)
 
     /**
      * @var string $qcache_info_file
@@ -61,26 +61,25 @@ class QCache
     private $max_qcache_files;
 
     /**
-     * @param string  $db_type
-     * @param string  $db_host
-     * @param string  $db_user
-     * @param string  $db_pass
-     * @param string  $db_name
-     * @param string  $qcache_folder
-     * @param int     $max_qcache_files
-     * @param bool    $qcache_enabled
+     * @param string $db_type
+     * @param string $db_host
+     * @param string $db_user
+     * @param string $db_pass
+     * @param string $db_name
+     * @param string $qcache_folder
+     * @param int $max_qcache_files
+     * @param bool $qcache_enabled
      * @throws QCacheConnectionException
      */
-    function __construct($db_type, $db_host, $db_user, $db_pass, $db_name, $qcache_folder, $max_qcache_files=1000, $qcache_enabled=true)
-    {
+    function __construct($db_type, $db_host, $db_user, $db_pass, $db_name, $qcache_folder, $max_qcache_files = 1000, $qcache_enabled = true) {
         if (empty($db_type) || empty($db_host) || empty($db_user) || empty($db_pass) || empty($db_name) || empty($qcache_folder)) {
             throw new QCacheConnectionException("Missing database connection details");
         }
 
         $this->qcache_enabled = $qcache_enabled;
         $this->qcache_folder = str_replace(["\\", '/'], DIRECTORY_SEPARATOR, rtrim($qcache_folder, "\\ ./"));
-        $this->qcache_info_file = $this->qcache_folder . DIRECTORY_SEPARATOR . self::QCACHE_INFO_FILE_NAME;
-        $this->reslocks_folder = $qcache_folder . DIRECTORY_SEPARATOR . 'reslocks';
+        $this->qcache_info_file = $this->qcache_folder.DIRECTORY_SEPARATOR.self::QCACHE_INFO_FILE_NAME;
+        $this->reslocks_folder = $qcache_folder.DIRECTORY_SEPARATOR.'reslocks';
         $this->max_qcache_files = $max_qcache_files;
         $this->reslock = new ResLock($this->reslocks_folder);
         $this->db_connection = $this->setConnection($db_type, $db_host, $db_user, $db_pass, $db_name);
@@ -96,22 +95,22 @@ class QCache
     }
 
     /**
-     * @param string    $sql
-     * @param string[]  $tables
-     * @param string    $src_file
-     * @param int       $src_line
-     * @param string    $description
+     * @param string $sql
+     * @param string[] $tables
+     * @param string $src_file
+     * @param int $src_line
+     * @param string $description
      *
      * @return SqlResultSet
      * @throws Exception
      */
-    public function query($sql, $tables, $src_file='', $src_line=0, $description='')
+    public function query($sql, $tables, $src_file = '', $src_line = 0, $description = '')
     {
         $sql = trim($sql);
 
         $csv_tables = implode(',', $tables);
 
-        $qc_key = '#' . hash("crc32b", $sql . $src_file . $src_line . $description);
+        $qc_key = hash("crc32b", $sql.$src_file.$src_line.$description);
 
         $qc_info = SerializedFileIO::readSerializedArray($this->qcache_info_file);
 
@@ -135,18 +134,28 @@ class QCache
         // get hi-res execution time when regenerating cache
         $microsecs = $refresh_cache ? $this->cachingProcessQuery($qc_key, $sql) : 0;
 
-        $this->updateStats($qc_info[$qc_key], $cached_result_available, $refresh_cache, $sql, $csv_tables, $microsecs, $src_file, $src_line, $description);
+        $this->updateStats(
+            $qc_info[$qc_key],
+            $cached_result_available,
+            $refresh_cache,
+            $sql,
+            $csv_tables,
+            $microsecs,
+            $src_file,
+            $src_line,
+            $description
+        );
 
         // get data from the cache file
-        $data = unserialize(file_get_contents($this->getHashFileName($qc_key)));
+        $data = unserialize(file_get_contents(self::getHashFileName($this->qcache_folder, $qc_key)));
 
         $this->computeCachePerformance($qc_info[$qc_key]);
 
         $rl_key = $this->reslock->lock($this->qcache_info_file);
         {
             if (mt_rand(0, 10) == 0) {
-                $this->sortQcacheByImportance($qc_info);
-                $this->removeExcessQCacheFiles($qc_info);
+                $this->sortCachesByImportance($qc_info);
+                $this->removeExcessCacheFiles($qc_info);
             }
 
             SerializedFileIO::writeSerializedArray($this->qcache_info_file, $qc_info);
@@ -158,17 +167,26 @@ class QCache
 
     /**
      * @param array  & $info
-     * @param bool     $cache_exists
-     * @param bool     $query_processed     - whether the sql query was processed
-     * @param string   $sql
-     * @param string   $csv_tables
-     * @param float    $exe_microsecs
-     * @param string   $src_file
-     * @param int      $src_line
-     * @param string   $description
+     * @param bool $cache_exists
+     * @param bool $query_processed - whether the sql query was processed
+     * @param string $sql
+     * @param string $csv_tables
+     * @param float $exe_microsecs
+     * @param string $src_file
+     * @param int $src_line
+     * @param string $description
      */
-    private function updateStats(&$info, $cache_exists, $query_processed, $sql, $csv_tables, $exe_microsecs, $src_file, $src_line, $description)
-    {
+    private function updateStats(
+        &$info,
+        $cache_exists,
+        $query_processed,
+        $sql,
+        $csv_tables,
+        $exe_microsecs,
+        $src_file,
+        $src_line,
+        $description
+    ) {
         $cache_mode = $query_processed ? 'db stats' : 'cache stats';
 
         $time_now = time();
@@ -186,8 +204,8 @@ class QCache
 
             // create a new cache info record
             $info = [
-                'sql'           => $sql,                  // sql
-                'tables'        => $csv_tables            // csv of tables affected by this query
+                'sql' => $sql,                  // sql
+                'tables' => $csv_tables            // csv of tables affected by this query
             ];
 
             if ($src_location) {
@@ -195,14 +213,14 @@ class QCache
             }
 
             if ($description) {
-                $info['description']  = $description;
+                $info['description'] = $description;
             }
 
             // create the default info record (cached)
-            $info['db stats']   = [
-                'create time'   => 0,                     // unix timestamp created
-                'access time'   => 0,                     // unix timestamp last accessed
-                'impressions'   => 0                      // number of times used
+            $info['db stats'] = [
+                'create time' => 0,                     // unix timestamp created
+                'access time' => 0,                     // unix timestamp last accessed
+                'impressions' => 0                      // number of times used
             ];
 
             $info['cache stats'] = $info['db stats'];
@@ -230,6 +248,7 @@ class QCache
 
         if ($cache_mode == 'cache stats') {
             $usage_stats['impressions']++;
+
             return;
         }
 
@@ -271,19 +290,48 @@ class QCache
     /**
      * Sorts $qc_info into descending importance order (most important will be first).
      *
-     * Primarily used when deciding which ones to remove during regular housekeeping.
+     * Primarily used when deciding which caches to remove during regular housekeeping.
      *
      * @param array  & $qc_info
      */
-    private function sortQcacheByImportance(&$qc_info)
+    private function sortCachesByImportance(&$qc_info)
     {
-       uasort(
+        uasort(
             $qc_info,
             function ($a, $b) {
                 $diff = $b['importance'] - $a['importance'];
+
                 return $diff < 0 ? -1 : ($diff > 0 ? 1 : 0);
             }
         );
+    }
+
+    /**
+     * Removes cache files.
+     * @param string  $qcache_folder
+     */
+    public static function clearCacheFiles($qcache_folder)
+    {
+        $qcache_folder    = str_replace(["\\", '/'], DIRECTORY_SEPARATOR, rtrim($qcache_folder, "\\ ./"));
+        $qcache_info_file = $qcache_folder.DIRECTORY_SEPARATOR.self::QCACHE_INFO_FILE_NAME;
+        $reslocks_folder  = $qcache_folder.DIRECTORY_SEPARATOR.'reslocks';
+
+        $reslock = new ResLock($reslocks_folder);
+
+        $rl_key = $reslock->lock($qcache_info_file);
+        {
+            $qc_info = SerializedFileIO::readSerializedArray($qcache_info_file);
+
+            foreach (array_keys($qc_info) as $qc_key) {
+                $cache_file = self::getHashFileName($qcache_folder, $qc_key);
+                unlink($cache_file);
+            }
+
+            if (file_exists($qcache_info_file)) {
+                unlink($qcache_info_file);
+            }
+        }
+        $reslock->unlock($rl_key);
     }
 
     /**
@@ -291,14 +339,14 @@ class QCache
      *
      * @param array  & $qc_info
      */
-    private function removeExcessQCacheFiles(&$qc_info)
+    private function removeExcessCacheFiles(&$qc_info)
     {
         if (($num_files_to_remove = count($qc_info) - $this->max_qcache_files) > 0) {
 
             $obsolete_elems = array_slice($qc_info, $this->max_qcache_files, null, true);
 
             foreach ($obsolete_elems as $qc_key => $qinfo) {
-                unlink($this->getHashFileName($qc_key));
+                unlink(self::getHashFileName($this->qcache_folder, $qc_key));
             }
 
             $qc_info = array_slice($qc_info, 0, $this->max_qcache_files, true);
@@ -309,8 +357,8 @@ class QCache
      * Process the given query and caches the result.
      * Returns the elapsed microsecond time;
      *
-     * @param string  $qc_key
-     * @param string  $sql
+     * @param string $qc_key
+     * @param string $sql
      * @return float
      */
     private function cachingProcessQuery($qc_key, $sql)
@@ -321,7 +369,7 @@ class QCache
         }
         $elapsed_microsecs = (hrtime(true) - $start_ns) / 1000000;
 
-        $file = $this->getHashFileName($qc_key);
+        $file = self::getHashFileName($this->qcache_folder, $qc_key);
 
         $rl_key = $this->reslock->lock($file);
         {
@@ -349,6 +397,7 @@ class QCache
 
             case 'mssql':
                 $file = $this->qcache_folder.DIRECTORY_SEPARATOR.self::MSSQL_TABLES_INFO_FILE_NAME;
+
                 return new DbConnectorMSSQL($db_host, $db_user, $db_pass, $db_name, $file, $this->reslock);
         }
 
@@ -357,11 +406,17 @@ class QCache
     }
 
     /**
-     * @param string  $qc_key
+     * @param string $qc_key
      * @return string
      */
-    private function getHashFileName($qc_key)
+    private static function getHashFileName($qcache_folder, $qc_key)
     {
-        return $this->qcache_folder . DIRECTORY_SEPARATOR . $qc_key . '.dat';
+        return $qcache_folder . DIRECTORY_SEPARATOR . '#' . $qc_key . '.dat';
+    }
+
+    public function refreshCaches()
+    {
+        // ToDo: This can refresh the top (say) 10% of caches
+
     }
 }
