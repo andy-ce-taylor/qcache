@@ -171,6 +171,56 @@ class QCache
     }
 
     /**
+     * Refreshes any caches that need updating.
+     *
+     * @param int  $max_runtime_millisecs_approx    - abort if accumulated run-time reaches $max_runtime milliseconds
+     */
+    public function refreshCaches($max_runtime_millisecs_approx)
+    {
+########################################################################################################################
+        return;
+########################################################################################################################
+        $rl_key = $this->reslock->lock($this->qcache_info_file);
+        {
+            $qc_info = JsonEncodedFileIO::readJsonEncodedArray($this->qcache_info_file);
+
+            $max_runtime_microsecs = (float)$max_runtime_millisecs_approx / 1000;
+            $start_time = microtime(true);
+
+            self::removeExcessCacheFiles($qc_info, $this->qcache_folder, $this->max_qcache_files_approx);
+
+            if (!empty($qc_info)) {
+                do {
+                    foreach ($qc_info as $qc_key => $info) {
+                        $last_access_time = $qc_info[$qc_key]['db stats']['access time'];
+                        $csv_tables = $qc_info[$qc_key]['tables'];
+                        $changed_tables = $this->db_connection->getChangedTables(
+                            $last_access_time,
+                            explode(',', $csv_tables)
+                        );
+
+                        if (!empty($changed_tables)) {
+                            $sql = $qc_info[$qc_key]['sql'];
+
+                            // get hi-res cache regeneration execution time
+                            $millisecs = $this->cachingProcessQuery($qc_key, $sql);
+
+                            $this->updateStats($qc_info[$qc_key], true, true, $sql, $csv_tables, $millisecs);
+                        }
+
+                        if (microtime(true) - $start_time >= $max_runtime_microsecs) {
+                            break;
+                        }
+                    }
+                } while (true);
+            }
+
+            JsonEncodedFileIO::writeJsonEncodedArray($this->qcache_info_file, $qc_info);
+        }
+        $this->reslock->unlock($rl_key);
+    }
+
+    /**
      * @param array  & $info
      * @param bool     $cache_exists
      * @param bool     $query_processed - whether the sql query was processed
@@ -188,9 +238,9 @@ class QCache
         $sql,
         $csv_tables,
         $exe_millisecs,
-        $src_file,
-        $src_line,
-        $description
+        $src_file=null,
+        $src_line=null,
+        $description=null
     ) {
         $cache_mode = $query_processed ? 'db stats' : 'cache stats';
 
@@ -293,46 +343,6 @@ class QCache
     }
 
     /**
-     * Sorts $qc_info into descending importance order (most important will be first).
-     *
-     * Primarily used when deciding which caches to remove during regular housekeeping.
-     *
-     * @param array  & $qc_info
-     */
-    private static function sortCachesByImportance(&$qc_info)
-    {
-        uasort(
-            $qc_info,
-            function ($a, $b) {
-                $diff = $b['importance'] - $a['importance'];
-
-                return $diff < 0 ? -1 : ($diff > 0 ? 1 : 0);
-            }
-        );
-    }
-
-    /**
-     * Removes excessive entries in $qc_info together with their associated cache files.
-     *
-     * @param array  & $qc_info
-     * @param string   $qcache_folder
-     * @param int      $max_qcache_files_approx
-     */
-    private static function removeExcessCacheFiles(&$qc_info, $qcache_folder, $max_qcache_files_approx)
-    {
-        if (($num_files_to_remove = count($qc_info) - $max_qcache_files_approx) > 0) {
-
-            $obsolete_elems = array_slice($qc_info, $max_qcache_files_approx, null, true);
-
-            foreach ($obsolete_elems as $qc_key => $qinfo) {
-                unlink(self::getHashFileName($qcache_folder, $qc_key));
-            }
-
-            $qc_info = array_slice($qc_info, 0, $max_qcache_files_approx, true);
-        }
-    }
-
-    /**
      * Process the given query and caches the result.
      * Returns the elapsed millisecond time;
      *
@@ -394,37 +404,43 @@ class QCache
     }
 
     /**
-     * Refreshes any caches that need updating.
+     * Sorts $qc_info into descending importance order (most important will be first).
      *
-     * @param string  $qcache_folder
-     * @param int     $max_runtime_millisecs   - abort if accumulated run-time reaches $max_runtime milliseconds
-     * @param int     $max_qcache_files_approx
+     * Primarily used when deciding which caches to remove during regular housekeeping.
+     *
+     * @param array  & $qc_info
      */
-    public static function refreshCaches($qcache_folder, $max_runtime_millisecs, $max_qcache_files_approx=1000)
+    private static function sortCachesByImportance(&$qc_info)
     {
-        $qcache_folder    = str_replace(["\\", '/'], DIRECTORY_SEPARATOR, rtrim($qcache_folder, "\\ ./"));
-        $qcache_info_file = $qcache_folder.DIRECTORY_SEPARATOR . self::QCACHE_INFO_FILE_NAME;
-        $reslocks_folder  = $qcache_folder.DIRECTORY_SEPARATOR . 'reslocks';
+        uasort(
+            $qc_info,
+            function ($a, $b) {
+                $diff = $b['importance'] - $a['importance'];
 
-        $reslock = new ResLock($reslocks_folder);
+                return $diff < 0 ? -1 : ($diff > 0 ? 1 : 0);
+            }
+        );
+    }
 
-        $rl_key = $reslock->lock($qcache_info_file);
-        {
-            $qc_info = JsonEncodedFileIO::readJsonEncodedArray($qcache_info_file);
+    /**
+     * Removes excessive entries in $qc_info together with their associated cache files.
+     *
+     * @param array  & $qc_info
+     * @param string   $qcache_folder
+     * @param int      $max_qcache_files_approx
+     */
+    private static function removeExcessCacheFiles(&$qc_info, $qcache_folder, $max_qcache_files_approx)
+    {
+        if (($num_files_to_remove = count($qc_info) - $max_qcache_files_approx) > 0) {
 
-            $max_runtime_microsecs = (float)$max_runtime_millisecs / 1000;
-            $start_time = microtime(true);
+            $obsolete_elems = array_slice($qc_info, $max_qcache_files_approx, null, true);
 
-            do {
-                self::removeExcessCacheFiles($qc_info, $qcache_folder, $max_qcache_files_approx);
+            foreach ($obsolete_elems as $qc_key => $qinfo) {
+                unlink(self::getHashFileName($qcache_folder, $qc_key));
+            }
 
-                foreach ($qc_info as $hash => $info) {
-
-                }
-
-            } while (microtime(true) - $start_time < $max_runtime_microsecs);
+            $qc_info = array_slice($qc_info, 0, $max_qcache_files_approx, true);
         }
-        $reslock->unlock($rl_key);
     }
 
     /**
@@ -473,11 +489,20 @@ class QCache
     {
         $qcache_folder    = str_replace(["\\", '/'], DIRECTORY_SEPARATOR, rtrim($qcache_folder, "\\ ./"));
         $qcache_info_file = $qcache_folder.DIRECTORY_SEPARATOR . self::QCACHE_INFO_FILE_NAME;
+        $reslocks_folder  = $qcache_folder.DIRECTORY_SEPARATOR . 'reslocks';
 
-        $qc_info = JsonEncodedFileIO::readJsonEncodedArray($qcache_info_file);
-        self::sortCachesByImportance($qc_info);
-        self::removeExcessCacheFiles($qc_info, $qcache_folder, $max_qcache_files_approx);
-        JsonEncodedFileIO::writeJsonEncodedArray($qcache_info_file, $qc_info);
+        $reslock = new ResLock($reslocks_folder);
+
+        $rl_key = $reslock->lock($qcache_info_file);
+        {
+            $qc_info = JsonEncodedFileIO::readJsonEncodedArray($qcache_info_file);
+
+            self::sortCachesByImportance($qc_info);
+            self::removeExcessCacheFiles($qc_info, $qcache_folder, $max_qcache_files_approx);
+
+            JsonEncodedFileIO::writeJsonEncodedArray($qcache_info_file, $qc_info);
+        }
+        $reslock->unlock($rl_key);
 
         return [self::QCACHE_INFO_FILE_NAME, $qcache_info_file];
     }
