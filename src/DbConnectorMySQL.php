@@ -43,19 +43,19 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
      */
     public function getDbTimeOffset()
     {
-        static $database_time_offset;
+        static $database_time_offset_l1c;
 
-        if (!$database_time_offset) {
+        if (!$database_time_offset_l1c) {
 
             $sql = 'SELECT NOW()';
 
             $result = $this->conn->query($sql);
             $db_timestamp = $result->fetch_row()[0];
 
-            $database_time_offset = time() - strtotime($db_timestamp);
+            $database_time_offset_l1c = time() - strtotime($db_timestamp);
         }
 
-        return $database_time_offset;
+        return $database_time_offset_l1c;
     }
 
     /**

@@ -22,7 +22,7 @@ abstract class DbChangeDetection
 
             // ToDo: implement TTL caching for use as a backup method
 
-            // for now, we must assume that all the tables have changed
+            // for now, we must assume that all tables have changed
             return $table_names;
         }
 
@@ -50,20 +50,38 @@ abstract class DbChangeDetection
      */
     public function getTableChangeTimes($table_names=null)
     {
+        static $table_times_l1c = [];
+
         $time_offset = $this->getDbTimeOffset();
 
         if (is_string($table_names)) {
             $table_names = array($table_names);
         }
 
-        $table_times = $this->getTableTimes($table_names);
+        $ret = [];
 
-        // add the db time offset to each table change time
-        return array_map(
-            function($time) use ($time_offset) {
-                return $time + $time_offset;
-            },
-            $table_times
-        );
+        foreach ($table_names as $k => $name) {
+            if (array_key_exists($name, $table_times_l1c)) {
+                $ret[$name] = $table_times_l1c[$name];
+                unset($table_names[$k]);
+            }
+        }
+
+        if (!empty($table_names)) {
+            $table_times = $this->getTableTimes($table_names);
+
+            // add the db time offset to each table change time
+            $table_times = array_map(
+                function ($time) use ($time_offset) {
+                    return $time + $time_offset;
+                },
+                $table_times
+            );
+
+            $table_times_l1c = array_merge($table_times_l1c, $table_times);
+            $ret = array_merge($ret, $table_times);
+        }
+
+        return $ret;
     }
 }

@@ -59,14 +59,14 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
      */
     public function getDbTimeOffset()
     {
-        static $database_time_offset;
+        static $database_time_offset_l1c;
 
-        if (!$database_time_offset) {
+        if (!$database_time_offset_l1c) {
 
-            $database_time_offset = time() - strtotime($this->getCurrentTimestamp());
+            $database_time_offset_l1c = time() - strtotime($this->getCurrentTimestamp());
         }
 
-        return $database_time_offset;
+        return $database_time_offset_l1c;
     }
 
     /**
@@ -166,7 +166,7 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
 
         $current_timestamp = $this->getCurrentTimestamp();
 
-        $cached_table_times = SerializedFileIO::readSerializedArray($this->table_times_file);
+        $cached_table_times = JsonEncodedFileIO::readJsonEncodedArray($this->table_times_file);
         $cache_save_needed = false;
 
         while($row = sqlsrv_fetch_array($res, SQLSRV_FETCH_ASSOC)) {
@@ -219,7 +219,7 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
             // lock & save
             $rl_key = $this->reslock->lock($this->table_times_file);
             {
-                SerializedFileIO::writeSerializedArray($this->table_times_file, $cached_table_times);
+                JsonEncodedFileIO::writeJsonEncodedArray($this->table_times_file, $cached_table_times);
             }
             $this->reslock->unlock($rl_key);
         }
