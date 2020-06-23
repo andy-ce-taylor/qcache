@@ -15,7 +15,7 @@ database is queried, the time is recorded and the result set is cached before be
 to the calling program.
 
 If no changes are detected, there is no need for the database to repeat the operation using the
-exact same query and producing an identical result set) so a cached result is returned to the
+exact same query and producing an identical result set, so a cached result can be returned to the
 calling program.
 
 The result (whether from the cache or the database) is passed back to the caller in object

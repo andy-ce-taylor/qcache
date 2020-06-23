@@ -7,6 +7,7 @@ use Exception;
 class QCache
 {
     const QCACHE_INFO_FILE_NAME = 'qcache_info.json';
+    const QCACHE_MISSES_FILE_NAME = 'qcache_misses.log';
     const MSSQL_TABLES_INFO_FILE_NAME = 'mssql_tables_info.json';
     const CLEAR_EXCESS_RND = 100;
 
@@ -59,6 +60,9 @@ class QCache
     /** string */
     private $reslocks_folder;
 
+    /** string */
+    private $qcache_misses_file;
+
     /** @var int */
     private $max_qcache_files_approx;
 
@@ -81,6 +85,7 @@ class QCache
         $this->qcache_enabled = $qcache_enabled;
         $this->qcache_folder = str_replace(["\\", '/'], DIRECTORY_SEPARATOR, rtrim($qcache_folder, "\\ ./"));
         $this->qcache_info_file = $this->qcache_folder . DIRECTORY_SEPARATOR . self::QCACHE_INFO_FILE_NAME;
+        $this->qcache_misses_file = $this->qcache_folder . DIRECTORY_SEPARATOR . self::QCACHE_MISSES_FILE_NAME;
         $this->reslocks_folder = $qcache_folder.DIRECTORY_SEPARATOR . 'reslocks';
         $this->max_qcache_files_approx = $max_qcache_files_approx;
         $this->reslock = new ResLock($this->reslocks_folder);
@@ -134,6 +139,13 @@ class QCache
 
         // get hi-res execution time when regenerating cache
         $millisecs = $refresh_cache ? $this->cachingProcessQuery($qc_key, $sql) : 0;
+
+        $rl_key = $this->reslock->lock($this->qcache_misses_file);
+        {
+            $rec = ($refresh_cache ? 'd' : 'c') . ',' . date('H:i s') . ",$millisecs,$sql\n";
+            file_put_contents($this->qcache_misses_file, $rec, FILE_APPEND);
+        }
+        $this->reslock->unlock($rl_key);
 
         $this->updateStats(
             $qc_data,
