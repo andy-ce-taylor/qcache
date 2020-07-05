@@ -38,10 +38,10 @@
             overflow-x: hidden;
             white-space: nowrap;
         }
-        .c1 { width: 42px; }
-        .c2 { width: 52px; }
-        .c3 { width: 68px; text-align: right; }
-        .c4 { min-width: 300px; width: 55%; }
+        .c1 { width: 50px; }
+        .c2 { width: 56px; }
+        .c3 { width: 74px; text-align: right; }
+        .c4 { min-width: 300px; width: 55%; padding-left: 20px; }
         .sql {
             font-family: "Courier New", Courier, monospace;
             color: darkblue;

@@ -138,14 +138,7 @@ class QCache
         }
 
         // get execution time (milliseconds) when regenerating cache
-        $millisecs = $refresh_cache ? $this->cachingProcessQuery($qc_key, $sql) : 0;
-
-        $rl_key = $this->reslock->lock($this->qcache_misses_file);
-        {
-            $rec = ($refresh_cache ? 'd' : 'c') . ',' . date('H:i s') . ",$millisecs,$sql\n";
-            file_put_contents($this->qcache_misses_file, $rec, FILE_APPEND);
-        }
-        $this->reslock->unlock($rl_key);
+        $sql_millisecs = $refresh_cache ? $this->cachingProcessQuery($qc_key, $sql) : 0;
 
         $this->updateStats(
             $qc_data,
@@ -153,14 +146,18 @@ class QCache
             $refresh_cache,
             $sql,
             $csv_tables,
-            $millisecs,
+            $sql_millisecs,
             $src_file,
             $src_line,
             $description
         );
 
-        // form a result set from the cache file
-        $resultset = new SqlResultSet(unserialize(file_get_contents(self::getHashFileName($this->qcache_folder, $qc_key))));
+        $start_nanosecs = hrtime(true);
+        {
+            // form a result set from the cache file
+            $resultset = new SqlResultSet(unserialize(file_get_contents(self::getHashFileName($this->qcache_folder, $qc_key))));
+        }
+        $resultset_millisecs = (hrtime(true) - $start_nanosecs) / 1000000;
 
         $this->computeCachePerformance($qc_data);
 
@@ -176,6 +173,21 @@ class QCache
             }
 
             JsonEncodedFileIO::writeJsonEncodedArray($this->qcache_info_file, $qc_info);
+        }
+        $this->reslock->unlock($rl_key);
+
+        $rl_key = $this->reslock->lock($this->qcache_misses_file);
+        {
+            if ($refresh_cache) {
+                $sql_millisecs += $resultset_millisecs;
+                $rec = 'd' . ',' . date('H:i s') . ",0,$sql_millisecs,$sql\n";
+            }
+            else {
+                $millisec_av = $qc_data['db stats']['millisec av'];
+                $rec = 'c' . ',' . date('H:i s') . ",$resultset_millisecs,$millisec_av,$sql\n";
+            }
+
+            file_put_contents($this->qcache_misses_file, $rec, FILE_APPEND);
         }
         $this->reslock->unlock($rl_key);
 

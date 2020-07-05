@@ -30,8 +30,7 @@ if (file_exists($qcache_misses_file)) {
             unlink($qcache_misses_file);
         }
         $reslock->unlock($rl_key);
-        $jjj = json_encode([-1, '']);
-        die($jjj);
+        die(json_encode([-1, '']));
     }
 
     $file_mtime = filemtime($qcache_misses_file);
@@ -66,8 +65,9 @@ if (file_exists($qcache_misses_file)) {
             $datasrc[] = [
                 'access' => $parts[0] == 'd' ? 'db' : 'cached',
                 'timestamp' => $parts[1],
-                'millisecs' => (float)$parts[2],
-                'sql' => implode(',', array_slice($parts, 3))
+                'c_millisecs' => (float)$parts[2],
+                'd_millisecs' => (float)$parts[3],
+                'sql' => implode(',', array_slice($parts, 4))
             ];
         }
 
@@ -76,23 +76,20 @@ if (file_exists($qcache_misses_file)) {
                 '<div class="t-row t-head">' .
                     '<div class="t-col c1">type</div>' .
                     '<div class="t-col c2">time</div>' .
-                    '<div class="t-col c3">millisecs</div>' .
+                    '<div class="t-col c3">cached ms</div>' .
+                    '<div class="t-col c3">db ms</div>' .
                     '<div class="t-col c4">sql</div>' .
                 '</div>';
 
         foreach ($datasrc as $ix => $data) {
             $row_css = $ix & 1 ? 'odd-row' : 'even-row';
-            if ($data['access'] == 'db') {
-                $row_css .= ' db-hit';
-            } else {
-                $data['millisecs'] = '&nbsp;';
-                $row_css .= ' cache-hit';
-            }
+            $row_css .= $data['access'] == 'db' ? ' db-hit' : ' cache-hit';
 
             $content .=     "<div class=\"t-row $row_css\">";
             $content .=     "<div class=\"t-col c1\">".$data['access'].'</div>';
             $content .=     "<div class=\"t-col c2\">".$data['timestamp'].'</div>';
-            $content .=     "<div class=\"t-col c3\">".$data['millisecs'].'</div>';
+            $content .=     "<div class=\"t-col c3\">".number_format($data['c_millisecs'], 3).'</div>';
+            $content .=     "<div class=\"t-col c3\">".number_format($data['d_millisecs'], 3).'</div>';
             $content .=     "<div class=\"t-col c4 sql\">".$data['sql'].'</div>';
             $content .= '</div>';
         }
