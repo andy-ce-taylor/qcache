@@ -71,3 +71,9 @@ while ($row = $result->fetch_assoc()) {
 
 $result->free_result();
 ```
+
+You can evoke a simple polling cache monitor; passing in the path to your cache folder, the delay between successive
+polls, and the number of recent qcache events to show.
+```
+new QCacheMonitor('/path_to/my_cache_folder', 1, 30);
+```

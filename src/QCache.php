@@ -137,7 +137,7 @@ class QCache
             }
         }
 
-        // get hi-res execution time when regenerating cache
+        // get execution time (milliseconds) when regenerating cache
         $millisecs = $refresh_cache ? $this->cachingProcessQuery($qc_key, $sql) : 0;
 
         $rl_key = $this->reslock->lock($this->qcache_misses_file);
@@ -214,7 +214,7 @@ class QCache
                         if (!empty($changed_tables)) {
                             $sql = $qc_info[$qc_key]['sql'];
 
-                            // get hi-res cache regeneration execution time
+                            // get cache regeneration execution time (milliseconds)
                             $millisecs = $this->cachingProcessQuery($qc_key, $sql);
 
                             $this->updateStats($qc_info[$qc_key], true, true, $sql, $csv_tables, $millisecs);
@@ -462,9 +462,10 @@ class QCache
      */
     public static function clearCacheFiles($qcache_folder)
     {
-        $qcache_folder    = str_replace(["\\", '/'], DIRECTORY_SEPARATOR, rtrim($qcache_folder, "\\ ./"));
-        $qcache_info_file = $qcache_folder.DIRECTORY_SEPARATOR . self::QCACHE_INFO_FILE_NAME;
-        $reslocks_folder  = $qcache_folder.DIRECTORY_SEPARATOR . 'reslocks';
+        $qcache_folder      = str_replace(["\\", '/'], DIRECTORY_SEPARATOR, rtrim($qcache_folder, "\\ ./"));
+        $qcache_info_file   = $qcache_folder.DIRECTORY_SEPARATOR . self::QCACHE_INFO_FILE_NAME;
+        $qcache_misses_file = $qcache_folder.DIRECTORY_SEPARATOR . self::QCACHE_MISSES_FILE_NAME;
+        $reslocks_folder    = $qcache_folder.DIRECTORY_SEPARATOR . 'reslocks';
 
         $reslock = new ResLock($reslocks_folder);
 
@@ -481,6 +482,14 @@ class QCache
 
             if (file_exists($qcache_info_file)) {
                 unlink($qcache_info_file);
+            }
+        }
+        $reslock->unlock($rl_key);
+
+        $rl_key = $reslock->lock($qcache_misses_file);
+        {
+            if (file_exists($qcache_misses_file)) {
+                unlink($qcache_misses_file);
             }
         }
         $reslock->unlock($rl_key);

@@ -1,74 +1,80 @@
-<?php
-
-session_write_close();
-
-require_once __DIR__ . "/../../../reslock/src/ResLock.php";
-
-use acet\reslock\ResLock;
-
-define ('QCACHE_INFO_FILE_NAME', 'qcache_info.json');
-define ('QCACHE_MISSES_FILE_NAME', 'qcache_misses.log');
-
-$qcache_folder = $_GET['qcpath'];
-$reslocks_folder = $qcache_folder.DIRECTORY_SEPARATOR . 'reslocks';
-$qcache_misses_file = $qcache_folder . DIRECTORY_SEPARATOR . QCACHE_MISSES_FILE_NAME;
-$qcache_info_file = $qcache_folder . DIRECTORY_SEPARATOR . QCACHE_INFO_FILE_NAME;
-
-$monitor_refresh_secs = (int)$_GET['rsecs'];
-$max_log_recs = (int)$_GET['maxlogs'];
-
-$datasrc = [];
-
-if (file_exists($qcache_misses_file)) {
-
-    $reslock = new ResLock($reslocks_folder);
-
-    if (isset($_GET['clear_logs'])) {
-        $rl_key = $reslock->lock($qcache_misses_file);
-        {
-            unlink($qcache_misses_file);
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>MONITOR</title>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Language" content="en-GB" />
+    <meta http-equiv="Content-Type" content="application/xhtml+xml;charset=utf-8" />
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <style type="text/css">
+        body {
+            width: 100%;
+            font-family: Arial, Verdana, Tahoma, serif;
         }
-        $reslock->unlock($rl_key);
-        $parsed = parse_url($_SERVER['REQUEST_URI']);
-        $query = $parsed['query'];
-        parse_str($query, $params);
-        unset($params['clear_logs']);
-        $url = $parsed['path'] . '?' . http_build_query($params);
-        header("Location: $url");
-    }
-
-    // load in the data (oldest>>>latest) and split into rows
-    $ar = explode("\n", file_get_contents($qcache_misses_file));
-    // remove the last (empty) row
-    array_pop($ar);
-
-    // get the latest n rows
-    $latest = array_slice($ar, -$max_log_recs);
-
-    if (count($ar) >= $max_log_recs * 2) {
-
-        // store the remaining (max n, newest) rows
-        $rl_key = $reslock->lock($qcache_misses_file);
-        {
-            file_put_contents($qcache_misses_file, implode("\n", $latest)."\n");
+        .t-table {
+            display: table;
+            width: 100%;
+            font-size: smaller;
         }
-        $reslock->unlock($rl_key);
-    }
-
-    // reorder: latest>>>oldest
-    $ar = array_reverse($latest);
-
-    foreach ($ar as $row) {
-        $parts = explode(',', $row);
-        $datasrc[] = [
-            'hit'       => $parts[0] == 'd' ? 'db' : 'cache',
-            'timestamp' => $parts[1],
-            'millisecs' => (float)$parts[2],
-            'sql'       => implode(',', array_slice($parts, 3))
-        ];
-    }
-
-    $clear_logs_link = $_SERVER['REQUEST_URI'] . "&clear_logs";
-}
-
-require_once __DIR__ . '/view.php';
+        .t-head {
+            color: ivory;
+            background-color: maroon;
+            font-size: larger;
+            font-weight: bold;
+        }
+        .t-row {
+            display: table-row;
+            width: auto;
+            height: 20px;
+            clear: both;
+        }
+        .odd-row  { background-color: #f5edf0
+        }
+        .even-row { background-color: inherit }
+        .t-col {
+            float: left;
+            display: table-column;
+            padding: 4px 10px;
+            overflow-x: hidden;
+            white-space: nowrap;
+        }
+        .c1 { width: 42px; }
+        .c2 { width: 52px; }
+        .c3 { width: 68px; text-align: right; }
+        .c4 { min-width: 300px; width: 55%; }
+        .sql {
+            font-family: "Courier New", Courier, monospace;
+            color: darkblue;
+        }
+        .db-hit, .cache-hit {
+            color: cadetblue;
+        }
+        .db-hit {
+            font-weight: bold;
+        }
+        .button {
+            background-color: ivory;
+            color: maroon;
+            font-weight: bold;
+            border-radius: 4px;
+            border: 1px solid teal;
+            display: inline-block;
+            cursor: pointer;
+            font-family: Arial, serif;
+            font-size: 17px;
+            margin-top: 30px;
+            padding: 6px 12px;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+<div id="content"></div>
+<script>
+    var monitor_refresh_secs = <?php echo $_GET['rsecs'];?>;
+    var qcache_folder = '<?php echo $_GET['qcpath'];?>';
+    var max_log_recs = <?php echo $_GET['maxlogs'];?>;
+</script>
+<script src="view.js"></script>
+</body>
+</html>
