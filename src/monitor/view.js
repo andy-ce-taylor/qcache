@@ -11,7 +11,7 @@ var timerId = setInterval(function request() {
     }
     $.ajax({
         method: 'post',
-        url: 'view.php'+args,
+        url: 'content.php'+args,
         success: function (json) {
             var data = $.parseJSON(json);
             new_file_mtime = data[0];
@@ -32,11 +32,6 @@ var timerId = setInterval(function request() {
         }
     });
 }, refresh_ms);
-
-function clearLog() {
-    clear_log = true;
-    wait_anim = -1;
-}
 
 function str_repeat(input, multiplier) {
     var string = "";

@@ -7,7 +7,7 @@ use Exception;
 class QCache
 {
     const QCACHE_INFO_FILE_NAME = 'qcache_info.json';
-    const QCACHE_MISSES_FILE_NAME = 'qcache_misses.log';
+    const QCACHE_LOG_FILE_NAME = 'qcache.log';
     const MSSQL_TABLES_INFO_FILE_NAME = 'mssql_tables_info.json';
     const CLEAR_EXCESS_RND = 100;
 
@@ -61,7 +61,7 @@ class QCache
     private $reslocks_folder;
 
     /** string */
-    private $qcache_misses_file;
+    private $qcache_log_file;
 
     /** @var int */
     private $max_qcache_files_approx;
@@ -85,7 +85,7 @@ class QCache
         $this->qcache_enabled = $qcache_enabled;
         $this->qcache_folder = str_replace(["\\", '/'], DIRECTORY_SEPARATOR, rtrim($qcache_folder, "\\ ./"));
         $this->qcache_info_file = $this->qcache_folder . DIRECTORY_SEPARATOR . self::QCACHE_INFO_FILE_NAME;
-        $this->qcache_misses_file = $this->qcache_folder . DIRECTORY_SEPARATOR . self::QCACHE_MISSES_FILE_NAME;
+        $this->qcache_log_file = $this->qcache_folder . DIRECTORY_SEPARATOR . self::QCACHE_LOG_FILE_NAME;
         $this->reslocks_folder = $qcache_folder.DIRECTORY_SEPARATOR . 'reslocks';
         $this->max_qcache_files_approx = $max_qcache_files_approx;
         $this->reslock = new ResLock($this->reslocks_folder);
@@ -102,11 +102,11 @@ class QCache
     }
 
     /**
-     * @param string    $sql
-     * @param string[]  $tables
-     * @param string    $src_file
-     * @param int       $src_line
-     * @param string    $description
+     * @param string           $sql
+     * @param string|string[]  $tables    array of table names or a tables csv string
+     * @param string           $src_file
+     * @param int              $src_line
+     * @param string           $description
      *
      * @return SqlResultSet
      * @throws Exception
@@ -115,19 +115,25 @@ class QCache
     {
         $sql = trim($sql);
 
-        $csv_tables = implode(',', $tables);
+        if (is_array($tables)) {
+            $csv_tables = implode(',', $tables);
+        }
+        else { // string containing a comma-separated list of table names
+            $csv_tables = $tables;
+            $tables = explode(',', $csv_tables);
+        }
 
         $qc_info = JsonEncodedFileIO::readJsonEncodedArray($this->qcache_info_file);
 
         $qc_key = hash("crc32b", $sql . $src_file . $src_line . $description);
 
-        $cached_result_available = $this->qcache_enabled && array_key_exists($qc_key, $qc_info);
+        $cached_result_available = array_key_exists($qc_key, $qc_info);
+        $use_cached_result = $this->qcache_enabled && $cached_result_available;
         $refresh_cache = true;
 
-        $qc_data = [];
+        $qc_data = $cached_result_available ? $qc_info[$qc_key] : [];
 
-        if ($cached_result_available) {
-            $qc_data = $qc_info[$qc_key];
+        if ($use_cached_result) {
             $last_access_time = $qc_data['db stats']['access time'];
             $changed_tables = $this->db_connection->getChangedTables($last_access_time, $tables);
 
@@ -142,7 +148,6 @@ class QCache
 
         $this->updateStats(
             $qc_data,
-            $cached_result_available,
             $refresh_cache,
             $sql,
             $csv_tables,
@@ -157,7 +162,7 @@ class QCache
             // form a result set from the cache file
             $resultset = new SqlResultSet(unserialize(file_get_contents(self::getHashFileName($this->qcache_folder, $qc_key))));
         }
-        $resultset_millisecs = (hrtime(true) - $start_nanosecs) / 1000000;
+        $cache_millisecs = (hrtime(true) - $start_nanosecs) / 1000000;
 
         $this->computeCachePerformance($qc_data);
 
@@ -176,18 +181,19 @@ class QCache
         }
         $this->reslock->unlock($rl_key);
 
-        $rl_key = $this->reslock->lock($this->qcache_misses_file);
+        $rl_key = $this->reslock->lock($this->qcache_log_file);
         {
-            if ($refresh_cache) {
-                $sql_millisecs += $resultset_millisecs;
-                $rec = 'd' . ',' . date('H:i s') . ",0,$sql_millisecs,$sql\n";
+            $time_now = time();
+
+            if ($refresh_cache) { // db hit
+                $rec = "$time_now,db,0,$sql_millisecs,$sql\n";
             }
             else {
                 $millisec_av = $qc_data['db stats']['millisec av'];
-                $rec = 'c' . ',' . date('H:i s') . ",$resultset_millisecs,$millisec_av,$sql\n";
+                $rec = "$time_now,qc,$cache_millisecs,$millisec_av,$sql\n";
             }
 
-            file_put_contents($this->qcache_misses_file, $rec, FILE_APPEND);
+            file_put_contents($this->qcache_log_file, $rec, FILE_APPEND);
         }
         $this->reslock->unlock($rl_key);
 
@@ -229,7 +235,7 @@ class QCache
                             // get cache regeneration execution time (milliseconds)
                             $millisecs = $this->cachingProcessQuery($qc_key, $sql);
 
-                            $this->updateStats($qc_info[$qc_key], true, true, $sql, $csv_tables, $millisecs);
+                            $this->updateStats($qc_info[$qc_key], true, $sql, $csv_tables, $millisecs);
                         }
 
                         if (microtime(true) - $start_time >= $max_runtime_microsecs) {
@@ -245,8 +251,7 @@ class QCache
     }
 
     /**
-     * @param array  & $info
-     * @param bool     $cache_exists
+     * @param array   &$info
      * @param bool     $query_processed - whether the sql query was processed
      * @param string   $sql
      * @param string   $csv_tables
@@ -256,8 +261,7 @@ class QCache
      * @param string   $description
      */
     private function updateStats(
-        &$info,
-        $cache_exists,
+       &$info,
         $query_processed,
         $sql,
         $csv_tables,
@@ -270,7 +274,7 @@ class QCache
 
         $time_now = time();
 
-        if (!$cache_exists) {
+        if (!$info) { // cache doesn't exist
 
             $src_location = '';
 
@@ -475,9 +479,9 @@ class QCache
     public static function clearCacheFiles($qcache_folder)
     {
         $qcache_folder      = str_replace(["\\", '/'], DIRECTORY_SEPARATOR, rtrim($qcache_folder, "\\ ./"));
-        $qcache_info_file   = $qcache_folder.DIRECTORY_SEPARATOR . self::QCACHE_INFO_FILE_NAME;
-        $qcache_misses_file = $qcache_folder.DIRECTORY_SEPARATOR . self::QCACHE_MISSES_FILE_NAME;
-        $reslocks_folder    = $qcache_folder.DIRECTORY_SEPARATOR . 'reslocks';
+        $qcache_info_file   = $qcache_folder.DIRECTORY_SEPARATOR.self::QCACHE_INFO_FILE_NAME;
+        $qcache_log_file = $qcache_folder.DIRECTORY_SEPARATOR.self::QCACHE_LOG_FILE_NAME;
+        $reslocks_folder    = $qcache_folder.DIRECTORY_SEPARATOR.'reslocks';
 
         $reslock = new ResLock($reslocks_folder);
 
@@ -498,10 +502,10 @@ class QCache
         }
         $reslock->unlock($rl_key);
 
-        $rl_key = $reslock->lock($qcache_misses_file);
+        $rl_key = $reslock->lock($qcache_log_file);
         {
-            if (file_exists($qcache_misses_file)) {
-                unlink($qcache_misses_file);
+            if (file_exists($qcache_log_file)) {
+                unlink($qcache_log_file);
             }
         }
         $reslock->unlock($rl_key);

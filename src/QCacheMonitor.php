@@ -15,6 +15,6 @@ class QCacheMonitor
         $uri = str_replace('\\', '/', substr(__DIR__, strlen($_SERVER['DOCUMENT_ROOT'])));
         $qcache_folder = str_replace('\\', '/', $qcache_folder);
         $query_str = 'qcpath='.urlencode($qcache_folder) . "&rsecs=$monitor_refresh_secs" . "&maxlogs=$max_log_recs";
-        header("Location: $uri/monitor/index.php?$query_str");
+        header("Location: $uri/monitor/view.php?$query_str");
     }
 }
