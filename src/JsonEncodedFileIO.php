@@ -10,7 +10,9 @@ class JsonEncodedFileIO
     public static function readJsonEncodedArray($file)
     {
         if (file_exists($file)) {
-            return json_decode(file_get_contents($file), true);
+            if ($content = file_get_contents($file)) {
+                return json_decode($content, true);
+            }
         }
         return [];
     }
