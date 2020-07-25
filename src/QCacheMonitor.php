@@ -3,6 +3,10 @@ namespace acet\qcache;
 
 class QCacheMonitor
 {
+    const CONTROL_OPTIONS_MAX_LOGS = [
+        10, 20, 50, 100, 500, 1000, 'All'
+    ];
+
     /**
      * QCacheMonitor
      *
@@ -14,7 +18,13 @@ class QCacheMonitor
     {
         $uri = str_replace('\\', '/', substr(__DIR__, strlen($_SERVER['DOCUMENT_ROOT'])));
         $qcache_folder = str_replace('\\', '/', $qcache_folder);
-        $query_str = 'qcpath='.urlencode($qcache_folder) . "&rsecs=$monitor_refresh_secs" . "&maxlogs=$max_log_recs";
+
+        $query_str =
+            'optsmaxlogs=' . implode(',', self::CONTROL_OPTIONS_MAX_LOGS) .
+            '&qcpath='     . urlencode($qcache_folder) .
+            '&rsecs='      . $monitor_refresh_secs .
+            '&maxlogs='    . $max_log_recs;
+
         header("Location: $uri/monitor/view.php?$query_str");
     }
 }

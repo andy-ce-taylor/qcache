@@ -38,7 +38,7 @@
             overflow-x: hidden;
             white-space: nowrap;
         }
-        .c1 { width: 65px; }
+        .c1 { width: 130px; }
         .c2 { width: 50px; }
         .c3 { width: 65px; text-align: right; }
         .c4 { min-width: 300px; width: 55%; padding-left: 30px; }
@@ -52,14 +52,35 @@
         .db-hit {
             font-weight: bold;
         }
+        #control {
+            height: 40px;
+        }
     </style>
 </head>
+<?php
+$opts_max_logs        = $_GET['optsmaxlogs'];
+$qcache_folder        = $_GET['qcpath'];
+$monitor_refresh_secs = $_GET['rsecs'];
+$max_log_recs         = $_GET['maxlogs'];
+
+$opts_mlogs = '';
+foreach (explode(',', $opts_max_logs) as $opt) {
+    $val = strtolower($opt) == 'all' ? 0 : $opt;
+    $sel = $val == $max_log_recs ? ' selected' : '';
+    $opts_mlogs .= "<option value=\"$val\"$sel>$opt</option>";
+}
+?>
 <body>
+<div id="control">
+    Show
+    <select id="num_rows_selector"><?php echo $opts_mlogs;?></select>
+    rows
+</div>
 <div id="content"></div>
 <script>
-    var monitor_refresh_secs = <?php echo $_GET['rsecs'];?>;
-    var qcache_folder = '<?php echo $_GET['qcpath'];?>';
-    var max_log_recs = <?php echo $_GET['maxlogs'];?>;
+    var qcache_folder = '<?php echo $qcache_folder;?>';
+    var monitor_refresh_secs = <?php echo $monitor_refresh_secs;?>;
+    var max_log_recs = <?php echo $max_log_recs;?>;
 </script>
 <script src="view.js"></script>
 </body>

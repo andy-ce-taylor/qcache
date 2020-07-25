@@ -4,37 +4,32 @@ session_write_close();
 
 require_once __DIR__ . "/../../../reslock/src/ResLock.php";
 
-use acet\reslock\ResLock;
-
 define ('QCACHE_INFO_FILE_NAME', 'qcache_info.json');
 define ('QCACHE_LOG_FILE_NAME', 'qcache.log');
 
 $prev_file_mtime = $_GET['fmtime'];
 $qcache_folder = $_GET['qcpath'];
-$reslocks_folder = $qcache_folder.DIRECTORY_SEPARATOR . 'reslocks';
 $qcache_log_file = $qcache_folder . DIRECTORY_SEPARATOR . QCACHE_LOG_FILE_NAME;
 $qcache_info_file = $qcache_folder . DIRECTORY_SEPARATOR . QCACHE_INFO_FILE_NAME;
 
+$prev_max_log_recs = (int)$_GET['prevmaxlogs'];
 $max_log_recs = (int)$_GET['maxlogs'];
+$max_log_recs_changed = $max_log_recs != $prev_max_log_recs;
 
-$file_mtime = $prev_file_mtime;
 $content = 'waiting...';
 
 if (file_exists($qcache_log_file)) {
 
-    $reslock = new ResLock($reslocks_folder);
-
     $file_mtime = filemtime($qcache_log_file);
 
-    if ($file_mtime != $prev_file_mtime) {
-
+    if ($file_mtime != $prev_file_mtime || $max_log_recs_changed) {
         // load in the data (oldest>>>latest) and split into rows
         $ar = explode("\n", file_get_contents($qcache_log_file));
         // discard the last (empty) row
         array_pop($ar);
 
         // get the latest n rows and reorder them: latest>>>oldest
-        $latest = array_slice($ar, -$max_log_recs);
+        $latest = $max_log_recs ? array_slice($ar, -$max_log_recs) : $ar;
         $ar = array_reverse($latest);
 
         $datasrc = [];
@@ -53,7 +48,7 @@ if (file_exists($qcache_log_file)) {
         $content =
             '<div class="t-table">' .
                 '<div class="t-row t-head">' .
-                    '<div class="t-col c1">time</div>' .
+                    '<div class="t-col c1">date & time</div>' .
                     '<div class="t-col c2">type</div>' .
                     '<div class="t-col c3">cache ms</div>' .
                     '<div class="t-col c3">db ms</div>' .
@@ -65,7 +60,7 @@ if (file_exists($qcache_log_file)) {
             $row_css .= $data['access'] == 'db' ? ' db-hit' : ' cache-hit';
 
             $content .=     "<div class=\"t-row $row_css\">";
-            $content .=     "<div class=\"t-col c1\">".date('H:i s', $data['timestamp']).'</div>';
+            $content .=     "<div class=\"t-col c1\">".date('Y/m/d H:i s', $data['timestamp']).'</div>';
             $content .=     "<div class=\"t-col c2\">".$data['access'].'</div>';
             if ($data['c_millisecs'] == 0.0) {
                 $content .= "<div class=\"t-col c3\">-</div>";
@@ -79,6 +74,10 @@ if (file_exists($qcache_log_file)) {
         }
 
         $file_mtime = filemtime($qcache_log_file);
+
+        if ($max_log_recs_changed) {
+            ++$file_mtime;
+        }
     }
 }
 else {
