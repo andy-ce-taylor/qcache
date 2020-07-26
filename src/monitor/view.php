@@ -1,3 +1,13 @@
+<?php
+namespace acet\qcache\monitor;
+
+session_write_close();
+require_once __DIR__ . '/../../../../autoload.php';
+
+use acet\qcache\Constants;
+use acet\qcache\JsonEncodedFileIO;
+
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -64,6 +74,10 @@
         #stats_first_log_time, #stats_secs, #stats_slowest_secs {
             font-weight: bold;
         }
+        #stats_secs {
+            font-size: larger;
+            color: #0c3d5d;
+        }
         #rows_selector {
             margin-top: -3px;
             float: right;
@@ -82,12 +96,6 @@
     </style>
 </head>
 <?php
-use acet\qcache\Constants;
-use acet\qcache\JsonEncodedFileIO;
-
-require __DIR__ . '\..\Constants.php';
-require __DIR__ . '\..\JsonEncodedFileIO.php';
-
 $opts_max_logs        = $_GET['optsmaxlogs'];
 $qcache_folder        = $_GET['qcpath'];
 $monitor_refresh_secs = $_GET['rsecs'];
@@ -112,7 +120,7 @@ $first_log_time = $total_saved_ms = $slowest_case_ms = $slowest_case_sql = $slow
 if (file_exists($qcache_stats_file)) {
     $stats = JsonEncodedFileIO::readJsonEncodedArray($qcache_stats_file);
     $first_log_time = date('Y/m/d H:i s', $stats['first_log_time']);
-    $total_saved_secs = number_format($stats['total_saved_ms'] / 1000, 5);
+    $total_saved_time = secondsToWords($stats['total_saved_ms']);
     $slowest_case_secs = number_format($stats['slowest_case']['ms'] / 1000, 5);
     $slowest_case_sql = $stats['slowest_case']['sql'];
     $slowest_case_time = $stats['slowest_case']['time'];
@@ -122,8 +130,7 @@ if (file_exists($qcache_stats_file)) {
 <div id="control">
     <div id="cache_stats"></div>
     <div id="stats">
-          Start data & time: <span id="stats_first_log_time"><?php echo $first_log_time;?></span>
-        - Total time saved: <span id="stats_secs"><?php echo $total_saved_secs;?></span> seconds
+          Total time saved since <span id="stats_first_log_time"><?php echo $first_log_time;?></span> is <span id="stats_secs"><?php echo $total_saved_time;?></span>
         - Slowest query was <span id="stats_slowest_secs"><?php echo $slowest_case_secs;?></span> seconds
     </div>
     <div id="rows_selector">Show <select id="num_rows_selector"><?php echo $opts_mlogs;?></select> rows
@@ -139,3 +146,34 @@ if (file_exists($qcache_stats_file)) {
 <script src="view.js"></script>
 </body>
 </html>
+
+
+<?php
+function secondsToWords($ms)
+{
+    $str = '';
+
+    $secs = intval($ms / 1000);
+
+    if ($days = intval($secs / (3600 * 24))) {
+        $str .= "$days day" . ($days > 1 ? 's' : '') . ', ';
+    }
+    if ($hours = ($secs / 3600) % 24) {
+        $str .= "$hours hour" . ($hours > 1 ? 's' : '') . ', ';
+    }
+    if ($mins = ($secs / 60) % 60) {
+        $str .= "$mins minute" . ($mins > 1 ? 's' : '') . ', ';
+    }
+
+    if ($str) {
+        $str = rtrim($str, ', ') . ' and ';
+    }
+
+    $secs = $secs % 60;
+    $ms %= 1000;
+    if ($secs || $ms) {
+        $str .= "$secs.$ms seconds";
+    }
+
+    return $str;
+}

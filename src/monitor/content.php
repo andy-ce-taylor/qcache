@@ -1,12 +1,11 @@
 <?php
+namespace acet\qcache\monitor;
+
+session_write_close();
+require_once __DIR__ . '/../../../../autoload.php';
 
 use acet\qcache\Constants;
 use acet\qcache\JsonEncodedFileIO;
-
-require __DIR__ . '\..\Constants.php';
-require __DIR__ . '\..\JsonEncodedFileIO.php';
-
-session_write_close();
 
 $prev_file_mtime = $_GET['fmtime'];
 $qcache_folder = $_GET['qcpath'];
@@ -19,7 +18,7 @@ $max_log_recs_changed = $max_log_recs != $prev_max_log_recs;
 
 $content = 'waiting...';
 $num_logs = -1;
-$first_log_time = $total_saved_secs = $slowest_case_secs = 'n/a';
+$first_log_time = $total_saved_time = $slowest_case_secs = 'n/a';
 
 if (file_exists($qcache_log_file)) {
 
@@ -38,7 +37,7 @@ if (file_exists($qcache_log_file)) {
         if (file_exists($qcache_stats_file)) {
             $stats = JsonEncodedFileIO::readJsonEncodedArray($qcache_stats_file);
             $first_log_time = date('Y/m/d H:i s', $stats['first_log_time']);
-            $total_saved_secs = number_format($stats['total_saved_ms'] / 1000, 5);
+            $total_saved_time = secondsToWords($stats['total_saved_ms']);
             $slowest_case_secs = number_format($stats['slowest_case']['ms'] / 1000, 5);
             $slowest_case_sql = $stats['slowest_case']['sql'];
             $slowest_case_time = $stats['slowest_case']['time'];
@@ -100,4 +99,34 @@ else {
     $file_mtime = -1;
 }
 
-echo json_encode([$file_mtime, $content, $num_logs, $first_log_time, $total_saved_secs, $slowest_case_secs]);
+echo json_encode([$file_mtime, $content, $num_logs, $first_log_time, $total_saved_time, $slowest_case_secs]);
+
+
+function secondsToWords($ms)
+{
+    $str = '';
+
+    $secs = intval($ms / 1000);
+
+    if ($days = intval($secs / (3600 * 24))) {
+        $str .= "$days day".($days > 1 ? 's' : '').', ';
+    }
+    if ($hours = ($secs / 3600) % 24) {
+        $str .= "$hours hour".($hours > 1 ? 's' : '').', ';
+    }
+    if ($mins = ($secs / 60) % 60) {
+        $str .= "$mins minute".($mins > 1 ? 's' : '').', ';
+    }
+
+    if ($str) {
+        $str = rtrim($str, ', ').' and ';
+    }
+
+    $secs = $secs % 60;
+    $ms %= 1000;
+    if ($secs || $ms) {
+        $str .= "$secs.$ms seconds";
+    }
+
+    return $str;
+}
