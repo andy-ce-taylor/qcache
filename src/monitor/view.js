@@ -62,7 +62,7 @@ var timerId = setInterval(function request() {
             if (data[2] !== -1) {
                 $('#num_rows_available').html(data[2]);
                 $('#stats_first_log_time').html(data[3]);
-                $('#stats_secs').html(data[4]);
+                $('#stats_time_saved').html(data[4]);
                 $('#stats_slowest_secs').html(data[5]);
             }
 

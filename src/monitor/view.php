@@ -67,16 +67,22 @@ use acet\qcache\JsonEncodedFileIO;
             height: 40px;
             margin-top: 20px;
         }
-        #stats {
-            float: left;
+        #stats1, #stats2 {
             color: #0f74a8;
         }
-        #stats_first_log_time, #stats_secs, #stats_slowest_secs {
+        #stats_first_log_time, #stats_time_saved, #stats_slowest_secs {
             font-weight: bold;
         }
-        #stats_secs {
+        #stats_time_saved {
             font-size: larger;
             color: #0c3d5d;
+        }
+        #stats2 {
+            padding: 12px 0;
+        }
+        #stats {
+            float: left;
+            padding-bottom: 8px;
         }
         #rows_selector {
             margin-top: -3px;
@@ -127,12 +133,16 @@ if (file_exists($qcache_stats_file)) {
 }
 ?>
 <body>
-<div id="control">
+<div id="stats">
     <div id="cache_stats"></div>
-    <div id="stats">
-          Total time saved since <span id="stats_first_log_time"><?php echo $first_log_time;?></span> is <span id="stats_secs"><?php echo $total_saved_time;?></span>
-        - Slowest query was <span id="stats_slowest_secs"><?php echo $slowest_case_secs;?></span> seconds
+    <div id="stats1">
+        Total time saved since <span id="stats_first_log_time"><?php echo $first_log_time;?></span> is <span id="stats_time_saved"><?php echo $total_saved_time;?></span>
     </div>
+    <div id="stats2">
+        Slowest query was <span id="stats_slowest_secs"><?php echo $slowest_case_secs;?></span> seconds
+    </div>
+</div>
+<div id="control">
     <div id="rows_selector">Show <select id="num_rows_selector"><?php echo $opts_mlogs;?></select> rows
         <span id="rows_available">(<span id="num_rows_available"><?php echo $num_logs;?></span> available)</span>
     </div>
