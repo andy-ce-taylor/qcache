@@ -48,7 +48,7 @@ use acet\qcache\JsonEncodedFileIO;
             overflow-x: hidden;
             white-space: nowrap;
         }
-        .c1 { width: 130px; }
+        .c1 { width: 152px; }
         .c2 { width: 50px; }
         .c3 { width: 85px; text-align: right; }
         .c4 { min-width: 300px; width: 55%; padding-left: 30px; }
@@ -99,6 +99,10 @@ use acet\qcache\JsonEncodedFileIO;
             font-size: medium;
             color: #1a4186;
         }
+        #content {
+            clear: both;
+            float: left;
+        }
     </style>
 </head>
 <?php
@@ -122,7 +126,7 @@ if (file_exists($qcache_log_file)) {
 $num_logs = count($logs);
 
 $qcache_stats_file = $qcache_folder . DIRECTORY_SEPARATOR . Constants::QCACHE_STATS_FILE_NAME;
-$first_log_time = $total_saved_ms = $slowest_case_ms = $slowest_case_sql = $slowest_case_time = 'n/a';
+$first_log_time = $total_saved_time = $slowest_case_secs = $slowest_case_sql = $slowest_case_time = 'n/a';
 if (file_exists($qcache_stats_file)) {
     $stats = JsonEncodedFileIO::readJsonEncodedArray($qcache_stats_file);
     $first_log_time = date('Y/m/d H:i s', $stats['first_log_time']);
@@ -166,23 +170,23 @@ function secondsToWords($ms)
     $secs = intval($ms / 1000);
 
     if ($days = intval($secs / (3600 * 24))) {
-        $str .= "$days day" . ($days > 1 ? 's' : '') . ', ';
+        $str .= "$days day".($days > 1 ? 's' : '').', ';
     }
     if ($hours = ($secs / 3600) % 24) {
-        $str .= "$hours hour" . ($hours > 1 ? 's' : '') . ', ';
+        $str .= "$hours hour".($hours > 1 ? 's' : '').', ';
     }
     if ($mins = ($secs / 60) % 60) {
-        $str .= "$mins minute" . ($mins > 1 ? 's' : '') . ', ';
+        $str .= "$mins minute".($mins > 1 ? 's' : '').', ';
     }
 
     if ($str) {
-        $str = rtrim($str, ', ') . ' and ';
+        $str = rtrim($str, ', ').' and ';
     }
 
     $secs = $secs % 60;
     $ms %= 1000;
     if ($secs || $ms) {
-        $str .= "$secs.$ms seconds";
+        $str .= ((float)($secs) + $ms / 1000) . ' seconds';
     }
 
     return $str;

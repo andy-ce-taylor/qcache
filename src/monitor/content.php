@@ -125,7 +125,7 @@ function secondsToWords($ms)
     $secs = $secs % 60;
     $ms %= 1000;
     if ($secs || $ms) {
-        $str .= "$secs.$ms seconds";
+        $str .= ((float)($secs) + $ms / 1000) . ' seconds';
     }
 
     return $str;
