@@ -51,13 +51,21 @@ var timerId = setInterval(function request() {
                 $('#content').html('waiting.' + str_repeat('.', ++wait_anim % 3));
             }
             else if (new_file_mtime !== file_mtime) {
-                $content = '';
+                content = '';
                 if (new_file_mtime) {
                     content = data[1];
                 }
                 $('#content').html(content);
                 file_mtime = new_file_mtime;
             }
+
+            if (data[2] !== -1) {
+                $('#num_rows_available').html(data[2]);
+                $('#stats_first_log_time').html(data[3]);
+                $('#stats_secs').html(data[4]);
+                $('#stats_slowest_secs').html(data[5]);
+            }
+
             waiting_for_response = false;
         },
         error: function () {

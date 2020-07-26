@@ -6,16 +6,6 @@ use Exception;
 
 class QCache
 {
-    const QCACHE_INFO_FILE_NAME = 'qcache_info.json';
-    const QCACHE_LOG_FILE_NAME = 'qcache.log';
-    const MSSQL_TABLES_INFO_FILE_NAME = 'mssql_tables_info.json';
-    const CLEAR_EXCESS_RND = 100;
-
-    // Weightings are used when computing cache importance
-    const AT_FACTOR = 1.0;          // access times (may need recency amplification (sines) rather than straight-line factors)
-    const IM_FACTOR = 0.5;          // Impressions
-    const CA_FACTOR = 3.5;          // Cumulative average (time cost)
-
     /**
      * @var string $qcache_info_file
      *
@@ -44,6 +34,9 @@ class QCache
      *   Individual cache file names are formed from their index hash (e.g. "#7b5afc25.dat").
      */
     private $qcache_info_file;
+
+    /** @var string */
+    private $qcache_stats_file;
 
     /** @var ResLock */
     private $reslock;
@@ -84,8 +77,9 @@ class QCache
 
         $this->qcache_enabled = $qcache_enabled;
         $this->qcache_folder = str_replace(["\\", '/'], DIRECTORY_SEPARATOR, rtrim($qcache_folder, "\\ ./"));
-        $this->qcache_info_file = $this->qcache_folder . DIRECTORY_SEPARATOR . self::QCACHE_INFO_FILE_NAME;
-        $this->qcache_log_file = $this->qcache_folder . DIRECTORY_SEPARATOR . self::QCACHE_LOG_FILE_NAME;
+        $this->qcache_info_file = $this->qcache_folder . DIRECTORY_SEPARATOR . Constants::QCACHE_INFO_FILE_NAME;
+        $this->qcache_stats_file = $this->qcache_folder . DIRECTORY_SEPARATOR . Constants::QCACHE_STATS_FILE_NAME;
+        $this->qcache_log_file = $this->qcache_folder . DIRECTORY_SEPARATOR . Constants::QCACHE_LOG_FILE_NAME;
         $this->reslocks_folder = $qcache_folder.DIRECTORY_SEPARATOR . 'reslocks';
         $this->max_qcache_files_approx = $max_qcache_files_approx;
         $this->reslock = new ResLock($this->reslocks_folder);
@@ -171,7 +165,7 @@ class QCache
             $qc_info = JsonEncodedFileIO::readJsonEncodedArray($this->qcache_info_file);
             $qc_info[$qc_key] = $qc_data;
 
-            if (!mt_rand(0, self::CLEAR_EXCESS_RND)) {
+            if (!mt_rand(0, Constants::CLEAR_EXCESS_RND)) {
                 // every now and then, sort the caches and remove the less important ones
                 self::sortCachesByImportance($qc_info);
                 self::removeExcessCacheFiles($qc_info, $this->qcache_folder, $this->max_qcache_files_approx);
@@ -181,6 +175,20 @@ class QCache
         }
         $this->reslock->unlock($rl_key);
 
+        $this->updateLogsAndStats($refresh_cache, $qc_data, $cache_millisecs, $sql_millisecs, $sql);
+
+        return $resultset;
+    }
+
+    /**
+     * @param bool  $refresh_cache
+     * @param array $qc_data
+     * @param $cache_millisecs
+     * @param $sql_millisecs
+     * @param $sql
+     */
+    private function updateLogsAndStats($refresh_cache, $qc_data, $cache_millisecs, $sql_millisecs, $sql)
+    {
         $rl_key = $this->reslock->lock($this->qcache_log_file);
         {
             $time_now = time();
@@ -194,14 +202,60 @@ class QCache
             }
 
             file_put_contents($this->qcache_log_file, $rec, FILE_APPEND);
+
+            $ms_diff = $millisec_av - $cache_millisecs;
+
+            if ($qcache_stats = JsonEncodedFileIO::readJsonEncodedArray($this->qcache_stats_file)) {
+                $qcache_stats['total_saved_ms'] += $ms_diff;
+                if ($ms_diff > $qcache_stats['slowest_case']['ms']) {
+                    $qcache_stats['slowest_case']['ms']   = $ms_diff;
+                    $qcache_stats['slowest_case']['sql']  = $sql;
+                    $qcache_stats['slowest_case']['time'] = $time_now;
+                }
+            }
+            else {
+                // build the qcache stats file
+                $first_log_time = $time_now;
+                $total_saved_ms = 0.0;
+                $sc_ms = 0;
+                $sc_sql = '';
+                $sc_time = 0;
+
+                if ($logs = explode("\n", file_get_contents($this->qcache_log_file))) {
+                    foreach ($logs as $log) {
+                        [$time, $mode, $cache_millisecs, $millisec_av, $sql] = explode(',', $log);
+                        if ($mode == 'qc') {
+                            $ms_diff = $millisec_av - $cache_millisecs;
+                            $total_saved_ms += $ms_diff;
+                            if ($ms_diff > $sc_ms) {
+                                $sc_ms = $ms_diff;
+                                $sc_sql = $sql;
+                                $sc_time = $time;
+                            }
+                        }
+                    }
+                }
+
+                $qcache_stats = [
+                    'first_log_time' => $first_log_time,
+                    'total_saved_ms' => $total_saved_ms,
+                    'slowest_case' => [
+                        'ms'   => $sc_ms,
+                        'sql'  => $sc_sql,
+                        'time' => $sc_time
+                    ]
+                ];
+            }
+
+            JsonEncodedFileIO::writeJsonEncodedArray($this->qcache_stats_file, $qcache_stats);
         }
         $this->reslock->unlock($rl_key);
-
-        return $resultset;
     }
 
     /**
      * Refreshes any caches that need updating.
+     *
+     * NOT YET IMPLEMENTED
      *
      * @param int  $max_runtime_millisecs_approx    - abort if accumulated run-time reaches $max_runtime milliseconds
      */
@@ -367,7 +421,7 @@ class QCache
         $i = $info['cache stats']['impressions'] + $info['db stats']['impressions'];
         $t = $info['db stats']['millisec av'];
 
-        $info['importance'] = ($a * self::AT_FACTOR) * ($i * self::IM_FACTOR) * ($t * self::CA_FACTOR);
+        $info['importance'] = ($a * Constants::AT_FACTOR) * ($i * Constants::IM_FACTOR) * ($t * Constants::CA_FACTOR);
     }
 
     /**
@@ -413,7 +467,7 @@ class QCache
                 return new DbConnectorMySQL($db_host, $db_user, $db_pass, $db_name);
 
             case 'mssql':
-                $file = $this->qcache_folder.DIRECTORY_SEPARATOR.self::MSSQL_TABLES_INFO_FILE_NAME;
+                $file = $this->qcache_folder.DIRECTORY_SEPARATOR.Constants::MSSQL_TABLES_INFO_FILE_NAME;
 
                 return new DbConnectorMSSQL($db_host, $db_user, $db_pass, $db_name, $file, $this->reslock);
         }
@@ -479,8 +533,8 @@ class QCache
     public static function clearCacheFiles($qcache_folder)
     {
         $qcache_folder      = str_replace(["\\", '/'], DIRECTORY_SEPARATOR, rtrim($qcache_folder, "\\ ./"));
-        $qcache_info_file   = $qcache_folder.DIRECTORY_SEPARATOR.self::QCACHE_INFO_FILE_NAME;
-        $qcache_log_file = $qcache_folder.DIRECTORY_SEPARATOR.self::QCACHE_LOG_FILE_NAME;
+        $qcache_info_file   = $qcache_folder.DIRECTORY_SEPARATOR.Constants::QCACHE_INFO_FILE_NAME;
+        $qcache_log_file = $qcache_folder.DIRECTORY_SEPARATOR.Constants::QCACHE_LOG_FILE_NAME;
         $reslocks_folder    = $qcache_folder.DIRECTORY_SEPARATOR.'reslocks';
 
         $reslock = new ResLock($reslocks_folder);
@@ -525,7 +579,7 @@ class QCache
     public static function getQCacheInfoFile($qcache_folder, $max_qcache_files_approx=1000)
     {
         $qcache_folder    = str_replace(["\\", '/'], DIRECTORY_SEPARATOR, rtrim($qcache_folder, "\\ ./"));
-        $qcache_info_file = $qcache_folder.DIRECTORY_SEPARATOR . self::QCACHE_INFO_FILE_NAME;
+        $qcache_info_file = $qcache_folder.DIRECTORY_SEPARATOR . Constants::QCACHE_INFO_FILE_NAME;
         $reslocks_folder  = $qcache_folder.DIRECTORY_SEPARATOR . 'reslocks';
 
         $reslock = new ResLock($reslocks_folder);
@@ -541,7 +595,7 @@ class QCache
         }
         $reslock->unlock($rl_key);
 
-        return [self::QCACHE_INFO_FILE_NAME, $qcache_info_file];
+        return [Constants::QCACHE_INFO_FILE_NAME, $qcache_info_file];
     }
 
     /**
