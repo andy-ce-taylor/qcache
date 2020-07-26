@@ -201,11 +201,21 @@ class QCache
                 $rec = "$time_now,qc,$cache_millisecs,$millisec_av,$sql\n";
             }
 
-            file_put_contents($this->qcache_log_file, $rec, FILE_APPEND);
+            $logs = [];
+            if (file_exists($this->qcache_log_file)) {
+                $logs = explode("\n", file_get_contents($this->qcache_log_file));
+            }
+            $logs[] = $rec;
 
-            $ms_diff = $millisec_av - $cache_millisecs;
+            if (count($logs) >= Constants::MAX_LOG_RECORDS) {
+                $logs = array_slice($logs, -Constants::MAX_LOG_RECORDS);
+            }
+
+            file_put_contents($this->qcache_log_file, implode("\n", $logs));
+
 
             if ($qcache_stats = JsonEncodedFileIO::readJsonEncodedArray($this->qcache_stats_file)) {
+                $ms_diff = $millisec_av - $cache_millisecs;
                 $qcache_stats['total_saved_ms'] += $ms_diff;
                 if ($ms_diff > $qcache_stats['slowest_case']['ms']) {
                     $qcache_stats['slowest_case']['ms']   = $ms_diff;

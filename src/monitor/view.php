@@ -113,9 +113,8 @@ $max_log_recs         = $_GET['maxlogs'];
 
 $opts_mlogs = '';
 foreach (explode(',', $opts_max_logs) as $opt) {
-    $val = strtolower($opt) == 'all' ? 0 : $opt;
-    $sel = $val == $max_log_recs ? ' selected' : '';
-    $opts_mlogs .= "<option value=\"$val\"$sel>$opt</option>";
+    $sel = $opt == $max_log_recs ? ' selected' : '';
+    $opts_mlogs .= "<option value=\"$opt\"$sel>$opt</option>";
 }
 
 $logs = [];

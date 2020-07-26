@@ -4,15 +4,15 @@ namespace acet\qcache;
 class QCacheMonitor
 {
     const CONTROL_OPTIONS_MAX_LOGS = [
-        10, 20, 30, 40, 50, 100, 200, 500, 1000
+        1, 10, 20, 30, 40, 50, 100, 200, 500
     ];
 
     /**
      * QCacheMonitor
      *
-     * @param string      $qcache_folder         - path to the qcache folder (where cache files are stored)
-     * @param int         $monitor_refresh_secs  - number of seconds between refreshes
-     * @param int|string  $max_log_recs          - maximum number of log records to show, or 'all'
+     * @param string  $qcache_folder         - path to the qcache folder (where cache files are stored)
+     * @param int     $monitor_refresh_secs  - number of seconds between refreshes
+     * @param int     $max_log_recs          - maximum number of log records to show
      */
     function __construct($qcache_folder, $monitor_refresh_secs=1, $max_log_recs=20)
     {
@@ -23,14 +23,17 @@ class QCacheMonitor
 
         $max_log_recs = (int)$max_log_recs;
 
-        if ($max_log_recs != 'all') {
-            if (!in_array($max_log_recs, $max_log_options)) {
-                $max_log_options[] = $max_log_recs;
-            }
-            sort($max_log_options);
+        if ($max_log_recs < 1) {
+            $max_log_recs = 1;
+        }
+        elseif ($max_log_recs > Constants::MAX_LOG_RECORDS) {
+            $max_log_recs = Constants::MAX_LOG_RECORDS;
         }
 
-        $max_log_options[] = 'All';
+        if (!in_array($max_log_recs, $max_log_options)) {
+            $max_log_options[] = $max_log_recs;
+            sort($max_log_options);
+        }
 
         $query_str =
             'optsmaxlogs=' . implode(',', $max_log_options) .
