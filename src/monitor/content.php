@@ -103,16 +103,20 @@ echo json_encode([$file_mtime, $content, $num_logs, $first_log_time, $total_save
 
 function secondsToWords($ms)
 {
-    $str = '';
-
-    $days = intval($ms / (3600000 * 24));
-    $str .= "$days day".($days != 1 ? 's' : '').', ';
-    $hours = ($ms / 3600000) % 24;
-    $str .= "$hours hour".($hours != 1 ? 's' : '').', ';
-    $mins = ($ms / 60000) % 60;
-    $str .= "$mins minute".($mins != 1 ? 's' : '').' and ';
-    $secs = intval($ms) / 1000;
-    $str .= "$secs seconds";
+    if ($ms < 0) {
+        $secs = $ms / 1000;
+        $str = "$secs seconds";
+    }
+    else {
+        $days = intval($ms / (3600000 * 24));
+        $str = "$days day".($days != 1 ? 's' : '').', ';
+        $hours = ($ms / 3600000) % 24;
+        $str .= "$hours hour".($hours != 1 ? 's' : '').', ';
+        $mins = ($ms / 60000) % 60;
+        $str .= "$mins minute".($mins != 1 ? 's' : '').' and ';
+        $secs = (intval($ms) % 60000) / 1000;
+        $str .= "$secs seconds";
+    }
 
     return $str;
 }

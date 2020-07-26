@@ -204,6 +204,7 @@ class QCache
             $logs = [];
             if (file_exists($this->qcache_log_file)) {
                 $logs = explode("\n", file_get_contents($this->qcache_log_file));
+                array_pop($logs);
             }
             $logs[] = $rec;
 
