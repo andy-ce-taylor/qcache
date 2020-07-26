@@ -167,27 +167,14 @@ function secondsToWords($ms)
 {
     $str = '';
 
-    $secs = intval($ms / 1000);
-
-    if ($days = intval($secs / (3600 * 24))) {
-        $str .= "$days day".($days > 1 ? 's' : '').', ';
-    }
-    if ($hours = ($secs / 3600) % 24) {
-        $str .= "$hours hour".($hours > 1 ? 's' : '').', ';
-    }
-    if ($mins = ($secs / 60) % 60) {
-        $str .= "$mins minute".($mins > 1 ? 's' : '').', ';
-    }
-
-    if ($str) {
-        $str = rtrim($str, ', ').' and ';
-    }
-
-    $secs = $secs % 60;
-    $ms %= 1000;
-    if ($secs || $ms) {
-        $str .= ((float)($secs) + $ms / 1000) . ' seconds';
-    }
+    $days = intval($ms / (3600000 * 24));
+    $str .= "$days day".($days != 1 ? 's' : '').', ';
+    $hours = ($ms / 3600000) % 24;
+    $str .= "$hours hour".($hours != 1 ? 's' : '').', ';
+    $mins = ($ms / 60000) % 60;
+    $str .= "$mins minute".($mins != 1 ? 's' : '').' and ';
+    $secs = intval($ms) / 1000;
+    $str .= "$secs seconds";
 
     return $str;
 }
