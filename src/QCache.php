@@ -96,19 +96,118 @@ class QCache
     }
 
     /**
-     * @param string           $sql
-     * @param string|string[]  $tables    array of table names or a tables csv string
-     * @param string           $src_file
-     * @param int              $src_line
-     * @param string           $description
+     * Returns TRUE if Qcache is able to process the given SQL statement, otherwise FALSE.
+     *
+     * @param string $sql
+     * @return bool
+     */
+    public static function cacheable($sql)
+    {
+        $qstr_tmp_lc = strtolower(trim($sql));
+
+        if (strpos($qstr_tmp_lc, 'select ') !== 0) {
+            // not a SELECT statement
+            return false;
+        }
+        if (strpos($qstr_tmp_lc, ' select ')) {
+            // Embedded SELECT
+            return false;
+        }
+        if (strpos($qstr_tmp_lc, 'select count(') === 0) {
+            // Not supported
+            return false;
+        }
+        if (($from = strpos($qstr_tmp_lc, ' from ')) === false) {
+            // Oops! - SELECT without FROM
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Returns the names of all tables involved in the given SQL statement.
+     *
+     * @param string $qstr
+     * @return string[]|bool
+     */
+    private function getTables($qstr)
+    {
+        // remove escape sequences
+        $qstr_tmp = str_replace(["\t", "\r", "\n"], ' ', trim($qstr));
+        $qstr_tmp_lc = strtolower($qstr_tmp);
+
+        $from = strpos($qstr_tmp_lc, ' from ') + 6;
+
+        // expect table names between FROM and... [first JOIN | LIMIT | WHERE] (whichever is first)
+        $tables_str = '';
+
+        // find JOINed tables
+        $first_join_pos = false;
+        $join_p = $from;
+        while ($join_p = strpos($qstr_tmp_lc, ' join ', $join_p)) {
+            if (!$first_join_pos) {
+                $tables_str = trim(substr($qstr_tmp, $from, $join_p - $from)) . ',';
+                $first_join_pos = $join_p;
+            }
+            $join_p += 6;
+            $on_p = strpos($qstr_tmp_lc, ' on ', $join_p);
+            $tables_str .= substr($qstr_tmp, $join_p, $on_p - $join_p) . ',';
+        }
+
+        if (!$first_join_pos) {
+            if (($where_p = strpos($qstr_tmp_lc, ' where ', $from)) === false) {
+                $where_p = PHP_INT_MAX;
+            }
+            if (($limit_p = strpos($qstr_tmp_lc, ' limit ', $from)) === false) {
+                $limit_p = PHP_INT_MAX;
+            }
+            if ($first_p = min($where_p, $limit_p)) {
+                $tables_str = trim(substr($qstr_tmp, $from, $first_p - $from));
+            }
+        }
+        else {
+            $tables_str = trim($tables_str, ', ');
+        }
+
+        // split $tables_str into individual tables
+        $tables_str = trim(str_replace(["'","`",'"'], '', $tables_str));
+        $tables = [];
+        foreach (explode(',', $tables_str) as $str) {
+            $str = trim($str);
+            if ($p = strpos($str, ' ')) {
+                $str = substr($str, 0, $p);
+            }
+            $tables[] = $str;
+        }
+
+        if ($tables) {
+            return $tables;
+        }
+
+        // Oops! - No tables found
+        return false;
+    }
+    
+    /**
+     * @param string  $sql
+     * @param mixed   $tables    array of table names, or a tables csv string, or null
+     * @param string  $src_file
+     * @param int     $src_line
+     * @param string  $description
      *
      * @return SqlResultSet
      * @throws Exception
      */
-    public function query($sql, $tables, $src_file = '', $src_line = 0, $description = '')
+    public function query($sql, $tables = null, $src_file = '', $src_line = 0, $description = '')
     {
         $sql = trim($sql);
 
+        if (is_null($tables)) {
+            if (($tables = $this->getTables($sql)) == false) {
+                throw new Exception("Bad SELECT statement");
+            }
+        }
         if (is_array($tables)) {
             $csv_tables = implode(',', $tables);
         }
@@ -116,6 +215,8 @@ class QCache
             $csv_tables = $tables;
             $tables = explode(',', $csv_tables);
         }
+
+        $csv_tables = implode(',', $tables);
 
         $qc_info = JsonEncodedFileIO::readJsonEncodedArray($this->qcache_info_file);
 
