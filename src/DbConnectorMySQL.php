@@ -1,6 +1,8 @@
 <?php
-/** @noinspection PhpComposerExtensionStubsInspection */
-/** @noinspection SqlDialectInspection */
+/** @noinspection PhpComposerExtensionStubsInspection
+ * @noinspection SqlNoDataSourceInspection
+ * @noinspection SqlDialectInspection
+ */
 
 namespace acet\qcache;
 

@@ -2,7 +2,7 @@
 
 namespace acet\qcache;
 
-use \Exception;
+use Exception;
 
 class QCacheConnectionException extends Exception{
 }

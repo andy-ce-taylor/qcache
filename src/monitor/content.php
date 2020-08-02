@@ -35,7 +35,7 @@ if (file_exists($qcache_log_file)) {
         $qcache_stats_file = $qcache_folder . DIRECTORY_SEPARATOR . Constants::QCACHE_STATS_FILE_NAME;
         $first_log_time = $total_saved_ms = $slowest_case_ms = $slowest_case_sql = $slowest_case_time = 'n/a';
         if (file_exists($qcache_stats_file)) {
-            $stats = JsonEncodedFileIO::readJsonEncodedArray($qcache_stats_file);
+            $stats = JsonEncodedFileIO::read($qcache_stats_file);
             $first_log_time = date('Y/m/d H:i s', $stats['first_log_time']);
             $total_saved_time = secondsToWords($stats['total_saved_ms']);
             $slowest_case_secs = number_format($stats['slowest_case']['ms'] / 1000, 5);

@@ -1,6 +1,8 @@
 <?php
-/** @noinspection PhpComposerExtensionStubsInspection */
-/** @noinspection SqlDialectInspection */
+/** @noinspection PhpComposerExtensionStubsInspection
+ * @noinspection SqlNoDataSourceInspection
+ * @noinspection SqlDialectInspection
+ */
 
 namespace acet\qcache;
 
@@ -166,7 +168,7 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
 
         $current_timestamp = $this->getCurrentTimestamp();
 
-        $cached_table_times = JsonEncodedFileIO::readJsonEncodedArray($this->table_times_file);
+        $cached_table_times = JsonEncodedFileIO::read($this->table_times_file);
         $cache_save_needed = false;
 
         while($row = sqlsrv_fetch_array($res, SQLSRV_FETCH_ASSOC)) {
@@ -219,7 +221,7 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
             // lock & save
             $rl_key = $this->reslock->lock($this->table_times_file);
             {
-                JsonEncodedFileIO::writeJsonEncodedArray($this->table_times_file, $cached_table_times);
+                JsonEncodedFileIO::write($this->table_times_file, $cached_table_times);
             }
             $this->reslock->unlock($rl_key);
         }

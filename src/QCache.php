@@ -4,7 +4,7 @@ namespace acet\qcache;
 use acet\reslock\ResLock;
 use Exception;
 
-class QCache
+class QCache extends QCacheUtils
 {
     /**
      * @var string $qcache_info_file
@@ -28,7 +28,7 @@ class QCache
      *           'access time'          - unix timestamp last accessed
      *           'impressions'          - number of times used
      *       ],
-     *       'importance'           - see QCache::computeCachePerformance()
+     *       'importance'           - see self::computeCachePerformance()
      *   ]
      *
      *   Individual cache file names are formed from their index hash (e.g. "#7b5afc25.dat").
@@ -96,99 +96,33 @@ class QCache
     }
 
     /**
-     * Returns TRUE if Qcache is able to process the given SQL statement, otherwise FALSE.
+     * Returns TRUE if Qcache is able to process the given SQL statement and is likely to significantly
+     * improve performance, otherwise FALSE.
      *
      * @param string $sql
      * @return bool
      */
-    public static function cacheable($sql)
+    public function cacheable($sql)
     {
+        static $cacheable_l1c = [];
+
+        $qc_key = hash("crc32b", $sql);
+
+        if (array_key_exists($qc_key, $cacheable_l1c)) {
+            return $cacheable_l1c[$qc_key];
+        }
+
         $qstr_tmp_lc = strtolower(trim($sql));
 
-        if (strpos($qstr_tmp_lc, 'select ') !== 0) {
-            // not a SELECT statement
-            return false;
-        }
-        if (strpos($qstr_tmp_lc, ' select ')) {
-            // Embedded SELECT
-            return false;
-        }
-        if (strpos($qstr_tmp_lc, 'select count(') === 0) {
-            // Not supported
-            return false;
-        }
-        if (($from = strpos($qstr_tmp_lc, ' from ')) === false) {
-            // Oops! - SELECT without FROM
-            return false;
-        }
-
-        return true;
+        return $cacheable_l1c[$qc_key] = (                  // QCache can handle this if the statement...
+            substr($qstr_tmp_lc, 0, 7) == 'select '     &&  // is a SELECT
+            strpos($qstr_tmp_lc, ' from ', 7)           &&  // and has a FROM
+            strpos($qstr_tmp_lc, ' join ', 7)           &&  // and has a JOIN
+            ! strpos($qstr_tmp_lc, 'count(', 7)         &&  // but doesn't have a count (unsupported)
+            ! strpos($qstr_tmp_lc, ' select ', 7)           // and doesn't have an embedded SELECT (unsupported)
+        );
     }
 
-    /**
-     * Returns the names of all tables involved in the given SQL statement.
-     *
-     * @param string $qstr
-     * @return string[]|bool
-     */
-    private function getTables($qstr)
-    {
-        // remove escape sequences
-        $qstr_tmp = str_replace(["\t", "\r", "\n"], ' ', trim($qstr));
-        $qstr_tmp_lc = strtolower($qstr_tmp);
-
-        $from = strpos($qstr_tmp_lc, ' from ') + 6;
-
-        // expect table names between FROM and... [first JOIN | LIMIT | WHERE] (whichever is first)
-        $tables_str = '';
-
-        // find JOINed tables
-        $first_join_pos = false;
-        $join_p = $from;
-        while ($join_p = strpos($qstr_tmp_lc, ' join ', $join_p)) {
-            if (!$first_join_pos) {
-                $tables_str = trim(substr($qstr_tmp, $from, $join_p - $from)) . ',';
-                $first_join_pos = $join_p;
-            }
-            $join_p += 6;
-            $on_p = strpos($qstr_tmp_lc, ' on ', $join_p);
-            $tables_str .= substr($qstr_tmp, $join_p, $on_p - $join_p) . ',';
-        }
-
-        if (!$first_join_pos) {
-            if (($where_p = strpos($qstr_tmp_lc, ' where ', $from)) === false) {
-                $where_p = PHP_INT_MAX;
-            }
-            if (($limit_p = strpos($qstr_tmp_lc, ' limit ', $from)) === false) {
-                $limit_p = PHP_INT_MAX;
-            }
-            if ($first_p = min($where_p, $limit_p)) {
-                $tables_str = trim(substr($qstr_tmp, $from, $first_p - $from));
-            }
-        }
-        else {
-            $tables_str = trim($tables_str, ', ');
-        }
-
-        // split $tables_str into individual tables
-        $tables_str = trim(str_replace(["'","`",'"'], '', $tables_str));
-        $tables = [];
-        foreach (explode(',', $tables_str) as $str) {
-            $str = trim($str);
-            if ($p = strpos($str, ' ')) {
-                $str = substr($str, 0, $p);
-            }
-            $tables[] = $str;
-        }
-
-        if ($tables) {
-            return $tables;
-        }
-
-        // Oops! - No tables found
-        return false;
-    }
-    
     /**
      * @param string  $sql
      * @param mixed   $tables    array of table names, or a tables csv string, or null
@@ -204,7 +138,7 @@ class QCache
         $sql = trim($sql);
 
         if (is_null($tables)) {
-            if (($tables = $this->getTables($sql)) == false) {
+            if (($tables = self::getTables($sql)) == false) {
                 throw new Exception("Bad SELECT statement");
             }
         }
@@ -216,9 +150,7 @@ class QCache
             $tables = explode(',', $csv_tables);
         }
 
-        $csv_tables = implode(',', $tables);
-
-        $qc_info = JsonEncodedFileIO::readJsonEncodedArray($this->qcache_info_file);
+        $qc_info = JsonEncodedFileIO::read($this->qcache_info_file) ?? [];
 
         $qc_key = hash("crc32b", $sql . $src_file . $src_line . $description);
 
@@ -259,11 +191,10 @@ class QCache
         }
         $cache_millisecs = (hrtime(true) - $start_nanosecs) / 1000000;
 
-        $this->computeCachePerformance($qc_data);
+        self::computeCachePerformance($qc_data);
 
         $rl_key = $this->reslock->lock($this->qcache_info_file);
         {
-            $qc_info = JsonEncodedFileIO::readJsonEncodedArray($this->qcache_info_file);
             $qc_info[$qc_key] = $qc_data;
 
             if (!mt_rand(0, Constants::CLEAR_EXCESS_RND)) {
@@ -272,7 +203,7 @@ class QCache
                 self::removeExcessCacheFiles($qc_info, $this->qcache_folder, $this->max_qcache_files_approx);
             }
 
-            JsonEncodedFileIO::writeJsonEncodedArray($this->qcache_info_file, $qc_info);
+            JsonEncodedFileIO::write($this->qcache_info_file, $qc_info);
         }
         $this->reslock->unlock($rl_key);
 
@@ -316,7 +247,7 @@ class QCache
             file_put_contents($this->qcache_log_file, implode("\n", $logs));
 
 
-            if ($qcache_stats = JsonEncodedFileIO::readJsonEncodedArray($this->qcache_stats_file)) {
+            if ($qcache_stats = JsonEncodedFileIO::read($this->qcache_stats_file)) {
                 $ms_diff = $millisec_av - $cache_millisecs;
                 $qcache_stats['total_saved_ms'] += $ms_diff;
                 if ($ms_diff > $qcache_stats['slowest_case']['ms']) {
@@ -359,7 +290,7 @@ class QCache
                 ];
             }
 
-            JsonEncodedFileIO::writeJsonEncodedArray($this->qcache_stats_file, $qcache_stats);
+            JsonEncodedFileIO::write($this->qcache_stats_file, $qcache_stats);
         }
         $this->reslock->unlock($rl_key);
     }
@@ -378,7 +309,7 @@ class QCache
 ########################################################################################################################
         $rl_key = $this->reslock->lock($this->qcache_info_file);
         {
-            $qc_info = JsonEncodedFileIO::readJsonEncodedArray($this->qcache_info_file);
+            $qc_info = JsonEncodedFileIO::read($this->qcache_info_file) ?? [];
 
             $max_runtime_microsecs = (float)$max_runtime_millisecs_approx / 1000;
             $start_time = microtime(true);
@@ -411,7 +342,7 @@ class QCache
                 } while (true);
             }
 
-            JsonEncodedFileIO::writeJsonEncodedArray($this->qcache_info_file, $qc_info);
+            JsonEncodedFileIO::write($this->qcache_info_file, $qc_info);
         }
         $this->reslock->unlock($rl_key);
     }
@@ -512,31 +443,6 @@ class QCache
     }
 
     /**
-     * Calculates the importance of the cache file, based on access time, popularity and query performance.
-     *
-     * The importance of a cache is determined by checking how recently and how often the information is requested,
-     * and how time consuming the db operation is.
-     *
-     *    a = access_time  - higher = more recent
-     *    i = impressions  - higher = more popular
-     *    t = millisec_av  - higher = more time costly
-     *
-     * Each of the determining values are individually weighted to find the overall importance.
-     *
-     *    importance = (a * af) * (i * if) * (t * tf)
-     *
-     * @param array  & $info
-     */
-    private function computeCachePerformance(&$info)
-    {
-        $a = max($info['cache stats']['access time'], $info['db stats']['access time']);
-        $i = $info['cache stats']['impressions'] + $info['db stats']['impressions'];
-        $t = $info['db stats']['millisec av'];
-
-        $info['importance'] = ($a * Constants::AT_FACTOR) * ($i * Constants::IM_FACTOR) * ($t * Constants::CA_FACTOR);
-    }
-
-    /**
      * Process the given query and caches the result.
      * Returns the elapsed millisecond time;
      *
@@ -586,149 +492,5 @@ class QCache
 
         // whoops!
         return null;
-    }
-
-    /**
-     * @param string  $qc_key
-     * @return string
-     */
-    private static function getHashFileName($qcache_folder, $qc_key)
-    {
-        return $qcache_folder . DIRECTORY_SEPARATOR . '#' . $qc_key . '.dat';
-    }
-
-    /**
-     * Sorts $qc_info into descending importance order (most important will be first).
-     *
-     * Primarily used when deciding which caches to remove during regular housekeeping.
-     *
-     * @param array  & $qc_info
-     */
-    private static function sortCachesByImportance(&$qc_info)
-    {
-        uasort(
-            $qc_info,
-            function ($a, $b) {
-                $diff = $b['importance'] - $a['importance'];
-
-                return $diff < 0 ? -1 : ($diff > 0 ? 1 : 0);
-            }
-        );
-    }
-
-    /**
-     * Removes excessive entries in $qc_info together with their associated cache files.
-     *
-     * @param array  & $qc_info
-     * @param string   $qcache_folder
-     * @param int      $max_qcache_files_approx
-     */
-    private static function removeExcessCacheFiles(&$qc_info, $qcache_folder, $max_qcache_files_approx)
-    {
-        if (($num_files_to_remove = count($qc_info) - $max_qcache_files_approx) > 0) {
-
-            $obsolete_elems = array_slice($qc_info, $max_qcache_files_approx, null, true);
-
-            foreach ($obsolete_elems as $qc_key => $qinfo) {
-                unlink(self::getHashFileName($qcache_folder, $qc_key));
-            }
-
-            $qc_info = array_slice($qc_info, 0, $max_qcache_files_approx, true);
-        }
-    }
-
-    /**
-     * Removes cache files.
-     *
-     * @param string  $qcache_folder
-     */
-    public static function clearCacheFiles($qcache_folder)
-    {
-        $qcache_folder      = str_replace(["\\", '/'], DIRECTORY_SEPARATOR, rtrim($qcache_folder, "\\ ./"));
-        $qcache_info_file   = $qcache_folder.DIRECTORY_SEPARATOR.Constants::QCACHE_INFO_FILE_NAME;
-        $qcache_log_file = $qcache_folder.DIRECTORY_SEPARATOR.Constants::QCACHE_LOG_FILE_NAME;
-        $reslocks_folder    = $qcache_folder.DIRECTORY_SEPARATOR.'reslocks';
-
-        $reslock = new ResLock($reslocks_folder);
-
-        $rl_key = $reslock->lock($qcache_info_file);
-        {
-            $qc_info = JsonEncodedFileIO::readJsonEncodedArray($qcache_info_file);
-
-            foreach (array_keys($qc_info) as $qc_key) {
-                $cache_file = self::getHashFileName($qcache_folder, $qc_key);
-                if (file_exists($cache_file)) {
-                    unlink($cache_file);
-                }
-            }
-
-            if (file_exists($qcache_info_file)) {
-                unlink($qcache_info_file);
-            }
-        }
-        $reslock->unlock($rl_key);
-
-        $rl_key = $reslock->lock($qcache_log_file);
-        {
-            if (file_exists($qcache_log_file)) {
-                unlink($qcache_log_file);
-            }
-        }
-        $reslock->unlock($rl_key);
-
-        if (file_exists($reslocks_folder)) {
-            self::rmdir_plus($reslocks_folder, false);
-        }
-    }
-
-    /**
-     * Returns an array containing the name and full path of the Qcache info file.
-     *
-     * @param string  $qcache_folder
-     * @param int     $max_qcache_files_approx
-     * @return string[]
-     */
-    public static function getQCacheInfoFile($qcache_folder, $max_qcache_files_approx=1000)
-    {
-        $qcache_folder    = str_replace(["\\", '/'], DIRECTORY_SEPARATOR, rtrim($qcache_folder, "\\ ./"));
-        $qcache_info_file = $qcache_folder.DIRECTORY_SEPARATOR . Constants::QCACHE_INFO_FILE_NAME;
-        $reslocks_folder  = $qcache_folder.DIRECTORY_SEPARATOR . 'reslocks';
-
-        $reslock = new ResLock($reslocks_folder);
-
-        $rl_key = $reslock->lock($qcache_info_file);
-        {
-            $qc_info = JsonEncodedFileIO::readJsonEncodedArray($qcache_info_file);
-
-            self::sortCachesByImportance($qc_info);
-            self::removeExcessCacheFiles($qc_info, $qcache_folder, $max_qcache_files_approx);
-
-            JsonEncodedFileIO::writeJsonEncodedArray($qcache_info_file, $qc_info);
-        }
-        $reslock->unlock($rl_key);
-
-        return [Constants::QCACHE_INFO_FILE_NAME, $qcache_info_file];
-    }
-
-    /**
-     * Recursively delete sub-folders and their contents.
-     * Also delete the given top folder if $delete_topdir is set.
-     *
-     * @param string $dir
-     * @param bool $delete_topdir
-     */
-    private static function rmdir_plus($dir, $delete_topdir=true)
-    {
-        if (!file_exists($dir)) {
-            return;
-        }
-
-        foreach (array_diff(scandir($dir), ['.', '..']) as $file) {
-            is_dir($path = $dir.DIRECTORY_SEPARATOR.$file) ? self::rmdir_plus($path) : unlink($path);
-        }
-
-        if ($delete_topdir) {
-            rmdir($dir);
-        }
     }
 }

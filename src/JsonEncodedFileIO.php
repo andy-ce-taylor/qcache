@@ -5,23 +5,23 @@ class JsonEncodedFileIO
 {
     /**
      * @param string  $file
-     * @return array
+     * @return mixed
      */
-    public static function readJsonEncodedArray($file)
+    public static function read($file)
     {
         if (file_exists($file)) {
             if ($content = file_get_contents($file)) {
                 return json_decode($content, true);
             }
         }
-        return [];
+        return null;
     }
 
     /**
      * @param string  $file
-     * @param array   $info
+     * @param mixed   $info
      */
-    public static function writeJsonEncodedArray($file, $info)
+    public static function write($file, $info)
     {
         file_put_contents($file, json_encode($info, JSON_PRETTY_PRINT));
     }
