@@ -142,7 +142,7 @@ if (file_exists($qcache_stats_file)) {
         Total time saved since <span id="stats_first_log_time"><?php echo $first_log_time;?></span> is <span id="stats_time_saved"><?php echo $total_saved_time;?></span>
     </div>
     <div id="stats2">
-        Slowest query was <span id="stats_slowest_secs"><?php echo $slowest_case_secs;?></span> seconds
+        Slowest database query was <span id="stats_slowest_secs"><?php echo $slowest_case_secs;?></span> seconds
     </div>
 </div>
 <div id="control">

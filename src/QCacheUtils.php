@@ -109,7 +109,7 @@ class QCacheUtils
      *
      * @param string  $qcache_folder
      */
-    protected static function clearCacheFiles($qcache_folder)
+    public static function clearCacheFiles($qcache_folder)
     {
         $qcache_folder      = str_replace(["\\", '/'], DIRECTORY_SEPARATOR, rtrim($qcache_folder, "\\ ./"));
         $qcache_info_file   = $qcache_folder.DIRECTORY_SEPARATOR.Constants::QCACHE_INFO_FILE_NAME;
