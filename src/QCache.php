@@ -40,7 +40,8 @@ class QCache extends QCacheUtils
 
     /**
      * @param string  $sql
-     * @param mixed   $tables    - array of table names, or a tables csv string, or null
+     * @param mixed   $tables       - array of table names, or a tables csv string, or null
+     * @param string $description
      *
      * @return SqlResultSet|false
      * @throws Exception

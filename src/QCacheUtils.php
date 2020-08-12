@@ -1,10 +1,23 @@
 <?php
+/**
+ * @noinspection SqlNoDataSourceInspection
+ * @noinspection SqlDialectInspection
+ */
+
 namespace acet\qcache;
 
 use acet\reslock\ResLock;
 
 class QCacheUtils
 {
+    /**
+     * Returns a description suitable for passing to QCache::query.
+     *
+     * @param string $file  - use __FILE__
+     * @param string $func  - use __FUNCTION__
+     * @param string $line  - use __LINE__
+     * @return string
+     */
     public static function getDescription($file, $func, $line)
     {
         $class = basename($file, '.php');
@@ -100,12 +113,21 @@ class QCacheUtils
     }
 
     /**
-     * Removes cache files.
+     * Removes cache records.
      *
-     * @param string  $qcache_folder
+     * @param string  $db_type
+     * @param string  $db_host
+     * @param string  $db_user
+     * @param string  $db_pass
+     * @param string  $db_name
+     * @param string  $temp_dir
      */
-    public static function clearCache($qcache_folder)
+    public static function clearCache($db_type, $db_host, $db_user, $db_pass, $db_name, $temp_dir)
     {
+        $conn = QCache::getConnection($db_type, $db_host, $db_user, $db_pass, $db_name, $temp_dir);
+
+        $conn->processUpdate('TRUNCATE TABLE qc_cache');
+        $conn->processUpdate('TRUNCATE TABLE qc_log');
     }
 
     /**
