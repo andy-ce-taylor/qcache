@@ -12,6 +12,8 @@ use Exception;
 
 class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
 {
+    const MSSQL_TABLES_INFO_FILE_NAME = 'mssql_tables_info.json';
+
     /** @var resource */
     private $conn;
 
@@ -30,11 +32,10 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
      * @param string  $user
      * @param string  $pass
      * @param string  $database_name
-     * @param string  $table_times_file;
-     * @param ResLock $reslock
+     * @param string  $temp_dir
      * @throws QCacheConnectionException
      */
-    function __construct($host, $user, $pass, $database_name, $table_times_file, $reslock)
+    function __construct($host, $user, $pass, $database_name, $temp_dir)
     {
         $this->conn = sqlsrv_connect(
             $host,
@@ -45,13 +46,22 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
             ]
         );
 
-        if (!$this->conn) {
+        if (!$this->conn)
             throw new QCacheConnectionException("MSSQL connection error");
-        }
 
         $this->database_name = $database_name;
-        $this->table_times_file = $table_times_file;
-        $this->reslock = $reslock;
+        $this->table_times_file = $temp_dir . DIRECTORY_SEPARATOR . self::MSSQL_TABLES_INFO_FILE_NAME;
+        $this->reslock = new ResLock($temp_dir);
+    }
+
+    /**
+     * @param string $str
+     * @return string
+     */
+    public function sql_escape_string($str)
+    {
+        $unpacked = unpack('H*hex', $str);
+        return '0x' . $unpacked['hex'];
     }
 
     /**
@@ -63,10 +73,8 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
     {
         static $database_time_offset_l1c;
 
-        if (!$database_time_offset_l1c) {
-
+        if (!$database_time_offset_l1c)
             $database_time_offset_l1c = time() - strtotime($this->getCurrentTimestamp());
-        }
 
         return $database_time_offset_l1c;
     }
@@ -89,25 +97,19 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
      */
     public function prepareSimpleSQL($table, $fields, $selector, $selector_values, $limit=0)
     {
-        if ($fields == '*') {
-            $fields_csv = '*';
-        }
-        else {
-            $fields_csv = '[' . implode('],[', $fields) . ']';
-        }
+        $fields_csv = $fields == '*' ? '*' : '[' . implode('],[', $fields) . ']';
 
         $where = '';
+
         if (!empty($selector) && !empty($selector_values)) {
 
             $selector = "[{$selector}]";
 
-            if (strpos($selector, ',') !== false) {
+            if (strpos($selector, ',') !== false)
                 $selector = "CONCAT(" . str_replace(',', ', " ", ', $selector) . ')';
-            }
 
-            foreach ($selector_values as $val) {
+            foreach ($selector_values as $val)
                 $where .= "{$selector} = '{$val}' OR ";
-            }
 
             // get rid of final 'OR'
             $where = ' WHERE ' . substr($where, 0, -4);
@@ -126,14 +128,20 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
     {
         $data = [];
 
-        if ($result = sqlsrv_query($this->conn, $sql)) {
-
-            while ($row = sqlsrv_fetch_array($result, SQLSRV_FETCH_ASSOC)) {
+        if ($result = sqlsrv_query($this->conn, $sql))
+            while ($row = sqlsrv_fetch_array($result, SQLSRV_FETCH_ASSOC))
                 $data[] = $row;
-            }
-        }
 
         return $data;
+    }
+
+    /**
+     * @param string $sql
+     * @return bool
+     */
+    public function processUpdate($sql)
+    {
+        return (bool)sqlsrv_query($this->conn, $sql);
     }
 
     /**
@@ -150,9 +158,8 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
     {
         $specific_tables = '';
 
-        if ($tables) {
+        if ($tables)
             $specific_tables = "AND OBJECT_ID IN (OBJECT_ID('".implode("'),OBJECT_ID('", $tables)."'))";
-        }
 
         // typical timestamp value: 2019-02-05 12:07:08.345
         $sql_query = "
@@ -160,9 +167,8 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
             FROM sys.dm_db_index_usage_stats
             WHERE database_id = DB_ID('$this->database_name') $specific_tables";
 
-        if (($res = sqlsrv_query($this->conn, $sql_query)) == false) {
+        if (($res = sqlsrv_query($this->conn, $sql_query)) == false)
             return false;
-        }
 
         $data = [];
 
@@ -172,31 +178,18 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
         $cache_save_needed = false;
 
         while($row = sqlsrv_fetch_array($res, SQLSRV_FETCH_ASSOC)) {
+
             $table_name = $row['TableName'];
 
-            if (array_key_exists($table_name, $cached_table_times)) {
+            if (array_key_exists($table_name, $cached_table_times))
                 $cached_timestamp = $cached_table_times[$table_name];
-            }
-            else {
+            else
                 $cached_timestamp = $cached_table_times[$table_name] = null;
-            }
 
-            if (!is_null($update_time = $row['last_user_update'])) {
-                // use the updated time
+            if (!is_null($update_time = $row['last_user_update'])) // use the updated time
                 $timestamp = date_format($update_time, 'Y-m-d H:i:s');
-            }
-            else {
-                // table hasn't been updated since SQL Server was started
-
-                if ($cached_timestamp) {
-                    // use the cached value
-                    $timestamp = $cached_timestamp;
-                }
-                else {
-                    // no cached value - use the current time
-                    $timestamp = $current_timestamp;
-                }
-            }
+            else // table hasn't been updated since SQL Server was started
+                $timestamp = $cached_timestamp ? $cached_timestamp : $current_timestamp;
 
             if ($timestamp != $cached_timestamp) {
                 $cached_table_times[$table_name] = $timestamp;
@@ -205,8 +198,7 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
 
             try {
                 $data[$table_name] = (int)(new DateTime($timestamp))->format('U');
-            }
-            catch (Exception $ex) {
+            } catch (Exception $ex) {
                 sqlsrv_free_stmt($res);
                 return false; // wrong time format
             }
@@ -220,9 +212,7 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
 
             // lock & save
             $rl_key = $this->reslock->lock($this->table_times_file);
-            {
-                JsonEncodedFileIO::write($this->table_times_file, $cached_table_times);
-            }
+            JsonEncodedFileIO::write($this->table_times_file, $cached_table_times);
             $this->reslock->unlock($rl_key);
         }
 

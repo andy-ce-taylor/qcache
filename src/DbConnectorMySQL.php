@@ -31,11 +31,19 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
     {
         $this->conn = new mysqli($host, $user, $pass, $database_name);
 
-        if ($this->conn->connect_errno) {
+        if ($this->conn->connect_errno)
             throw new QCacheConnectionException("MySQL connection error: " . $this->conn->connect_errno);
-        }
 
         $this->database_name = $database_name;
+    }
+
+    /**
+     * @param string $str
+     * @return string
+     */
+    public function sql_escape_string($str)
+    {
+        return $this->conn->escape_string($str);
     }
 
     /**
@@ -78,25 +86,18 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
      */
     public function prepareSimpleSQL($table, $fields, $selector, $selector_values, $limit=0)
     {
-        if ($fields == '*') {
-            $fields_csv = '*';
-        }
-        else {
-            $fields_csv = '`' . implode('`,`', $fields) . '`';
-        }
+        $fields_csv = $fields == '*' ? '*' : '`' . implode('`,`', $fields) . '`';
 
         $where = '';
         if (!empty($selector) && !empty($selector_values)) {
 
             $selector = "`{$selector}`";
 
-            if (strpos($selector, ',') !== false) {
+            if (strpos($selector, ',') !== false)
                 $selector = "CONCAT(" . str_replace(',', ', " ", ', $selector) . ')';
-            }
 
-            foreach ($selector_values as $val) {
+            foreach ($selector_values as $val)
                 $where .= "{$selector} = '{$val}' OR ";
-            }
 
             // get rid of final 'OR'
             $where = 'WHERE ' . substr($where, 0, -4);
@@ -115,14 +116,20 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
     {
         $data = [];
 
-        if ($result = $this->conn->query($sql)) {
-
-            while ($row = $result->fetch_assoc()) {
+        if ($result = $this->conn->query($sql))
+            while ($row = $result->fetch_assoc())
                 $data[] = $row;
-            }
-        }
 
         return $data;
+    }
+
+    /**
+     * @param string $sql
+     * @return bool
+     */
+    public function processUpdate($sql)
+    {
+        return (bool)$this->conn->query($sql);
     }
 
     /**
@@ -135,9 +142,8 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
     {
         $specific_tables = '';
 
-        if ($tables) {
+        if ($tables)
             $specific_tables = "AND TABLE_NAME IN ('" . implode("','", $tables) . "')";
-        }
 
         // typical timestamp value: 2020-05-24 12:01:23
         $sql_query = "
@@ -145,21 +151,18 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
             FROM information_schema.tables
             WHERE TABLE_SCHEMA = '$this->database_name' $specific_tables";
 
-        if (!($res = $this->conn->query($sql_query))) {
-            return false; // permissions?
-        }
+        if (!($res = $this->conn->query($sql_query)))
+            return false; // permissions problem?
 
         $data = [];
 
-        while ($row = $res->fetch_assoc()) {
+        while ($row = $res->fetch_assoc())
             try {
                 $data[$row['TABLE_NAME']] = (int)(new DateTime($row['UPDATE_TIME']))->format('U');
-            }
-            catch (Exception $ex) {
+            } catch (Exception $ex) {
                 $res->free_result();
                 return false; // wrong time format
             }
-        }
 
         $res->free_result();
 

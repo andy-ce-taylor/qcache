@@ -7,6 +7,8 @@ QCache is a query caching library which works with MySQL and MSSQL databases (mo
 PHP scripts spend much of their time querying databases using SELECT statements. QCache can
 replace those calls, making time-hungry database operations perform faster and more efficiently.
 
+#### How it works
+
 QCache checks the tables used in a SELECT statement to see whether anything has changed since
 it last looked (_rows added_/_updated_/_dropped_).
 

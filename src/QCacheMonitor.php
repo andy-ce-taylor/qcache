@@ -10,36 +10,33 @@ class QCacheMonitor
     /**
      * QCacheMonitor
      *
-     * @param string  $qcache_folder         - path to the qcache folder (where cache files are stored)
-     * @param int     $monitor_refresh_secs  - number of seconds between refreshes
+     * @param mixed   $conn                  - database connection
+     * @param int     $monitor_refresh_secs  - number of seconds between auto refreshes
      * @param int     $max_log_recs          - maximum number of log records to show
      */
-    function __construct($qcache_folder, $monitor_refresh_secs=1, $max_log_recs=20)
+    function __construct($conn, $monitor_refresh_secs=4, $max_log_recs=20)
     {
         $uri = str_replace('\\', '/', substr(__DIR__, strlen($_SERVER['DOCUMENT_ROOT'])));
-        $qcache_folder = str_replace('\\', '/', $qcache_folder);
 
         $max_log_options = self::CONTROL_OPTIONS_MAX_LOGS;
 
         $max_log_recs = (int)$max_log_recs;
 
-        if ($max_log_recs < 1) {
+        if ($max_log_recs < 1)
             $max_log_recs = 1;
-        }
-        elseif ($max_log_recs > Constants::MAX_LOG_RECORDS) {
-            $max_log_recs = Constants::MAX_LOG_RECORDS;
-        }
 
-        if (!in_array($max_log_recs, $max_log_options)) {
+        if (!in_array($max_log_recs, $max_log_options))
             $max_log_options[] = $max_log_recs;
-            sort($max_log_options);
-        }
+
+        sort($max_log_options);
 
         $query_str =
-            'optsmaxlogs=' . implode(',', $max_log_options) .
-            '&qcpath='     . urlencode($qcache_folder) .
-            '&rsecs='      . $monitor_refresh_secs .
-            '&maxlogs='    . $max_log_recs;
+            'conn='         . $conn .
+            '&optsmaxlogs=' . implode(',', $max_log_options) .
+            '&rsecs='       . $monitor_refresh_secs .
+            '&maxlogs='     . $max_log_recs;
+
+return; // ToDo: $conn is no good. I'll deal with this later
 
         header("Location: $uri/monitor/view.php?$query_str");
     }

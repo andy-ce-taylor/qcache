@@ -57,15 +57,13 @@ class SqlResultSet
      */
     public function fetch_all(int $result_type = self::RES_FMT_NUM)
     {
-        if ($this->row_ix == $this->num_rows) {
+        if ($this->row_ix == $this->num_rows)
             return [];
-        }
 
         $rows = [];
 
-        while ($this->row_ix < $this->num_rows) {
+        while ($this->row_ix < $this->num_rows)
             $rows[] = $this->fetch_array($result_type);
-        }
 
         return $rows;
     }
@@ -80,20 +78,18 @@ class SqlResultSet
      */
     public function fetch_array(int $result_type = self::RES_FMT_BOTH)
     {
-        if ($this->row_ix == $this->num_rows) {
+        if ($this->row_ix == $this->num_rows)
             return null;
-        }
 
         $row_assoc = $this->fetch_assoc();
 
         $row = [];
-        if ($result_type == self::RES_FMT_NUM || $result_type == self::RES_FMT_BOTH) {
-            $row = array_values($row_assoc);
-        }
 
-        if ($result_type == self::RES_FMT_ASSOC || $result_type == self::RES_FMT_BOTH) {
+        if ($result_type == self::RES_FMT_NUM || $result_type == self::RES_FMT_BOTH)
+            $row = array_values($row_assoc);
+
+        if ($result_type == self::RES_FMT_ASSOC || $result_type == self::RES_FMT_BOTH)
             $row = array_merge($row, $row_assoc);
-        }
 
         return $row;
     }
@@ -107,9 +103,8 @@ class SqlResultSet
      */
     public function fetch_assoc()
     {
-        if ($this->row_ix == $this->num_rows) {
+        if ($this->row_ix == $this->num_rows)
             return null;
-        }
 
         $row = $this->rows[$this->row_ix++];
 
@@ -125,9 +120,8 @@ class SqlResultSet
      */
     public function fetch_row()
     {
-        if ($this->row_ix == $this->num_rows) {
+        if ($this->row_ix == $this->num_rows)
             return null;
-        }
 
         return array_values($this->fetch_assoc());
     }

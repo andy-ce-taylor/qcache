@@ -106,10 +106,14 @@ use acet\qcache\JsonEncodedFileIO;
     </style>
 </head>
 <?php
+
+$conn                 = $_GET['conn'];
 $opts_max_logs        = $_GET['optsmaxlogs'];
-$qcache_folder        = $_GET['qcpath'];
 $monitor_refresh_secs = $_GET['rsecs'];
 $max_log_recs         = $_GET['maxlogs'];
+
+// ToDo: $conn is no good. I'll deal with this later
+
 
 $opts_mlogs = '';
 foreach (explode(',', $opts_max_logs) as $opt) {
@@ -118,7 +122,11 @@ foreach (explode(',', $opts_max_logs) as $opt) {
 }
 
 $logs = [];
-$qcache_log_file = $qcache_folder . DIRECTORY_SEPARATOR . Constants::QCACHE_LOG_FILE_NAME;
+
+$sql = "SELECT l.time, l.context, l.nanosecs, c.script FROM qc_log l JOIN qc_cache c ON c.hash=l.hash";
+
+
+
 if (file_exists($qcache_log_file)) {
     $logs = explode("\n", file_get_contents($qcache_log_file));
 }

@@ -4,6 +4,12 @@ namespace acet\qcache;
 interface DbConnectorInterface
 {
     /**
+     * @param string $str
+     * @return string
+     */
+    public function sql_escape_string($str);
+
+    /**
      * Returns the difference (in seconds) between database timestamps and the current system time.
      *
      * @return int
@@ -33,6 +39,12 @@ interface DbConnectorInterface
      * @return array
      */
     public function processQuery($sql);
+
+    /**
+     * @param string  $sql
+     * @return bool
+     */
+    public function processUpdate($sql);
 
     /**
      * Returns the change times for the given tables.
