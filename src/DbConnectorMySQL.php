@@ -1,5 +1,6 @@
 <?php
-/** @noinspection PhpComposerExtensionStubsInspection
+/**
+ * @noinspection PhpComposerExtensionStubsInspection
  * @noinspection SqlNoDataSourceInspection
  * @noinspection SqlDialectInspection
  */

@@ -16,12 +16,12 @@ class QCacheUtils
      * @param string $file  - use __FILE__
      * @param string $func  - use __FUNCTION__
      * @param string $line  - use __LINE__
-     * @return string
+     * @return string       - e.g. "my_file.php[123]::MyClass::myMethod"
      */
     public static function getDescription($file, $func, $line)
     {
         $class = basename($file, '.php');
-        return "$file[$line]::$class::$func";
+        return "{$file}[$line]::$class::$func";
     }
 
     /**
