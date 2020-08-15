@@ -6,8 +6,6 @@
 
 namespace acet\qcache;
 
-use acet\reslock\ResLock;
-
 class QCacheUtils
 {
     /**
@@ -120,32 +118,50 @@ class QCacheUtils
      * @param string  $db_user
      * @param string  $db_pass
      * @param string  $db_name
-     * @param string  $temp_dir
+     * @param string  $module_id
      */
-    public static function clearCache($db_type, $db_host, $db_user, $db_pass, $db_name, $temp_dir)
+    public static function clearCache($db_type, $db_host, $db_user, $db_pass, $db_name, $module_id='')
     {
-        $conn = QCache::getConnection($db_type, $db_host, $db_user, $db_pass, $db_name, $temp_dir);
+        $conn = QCache::getConnection($db_type, $db_host, $db_user, $db_pass, $db_name, $module_id);
 
-        $conn->processUpdate('TRUNCATE TABLE qc_cache');
-        $conn->processUpdate('TRUNCATE TABLE qc_log');
+        if ($module_id)
+            $module_id .= '_';
+
+        $table_qc_cache = 'qc_' . $module_id . 'cache';
+//      $table_qc_logs  = 'qc_' . $module_id . 'logs';
+
+        $conn->write("TRUNCATE TABLE $table_qc_cache");
+//      $conn->write("TRUNCATE TABLE $table_qc_logs");
     }
 
     /**
-     * Recursively delete sub-folders and their contents.
-     * Also delete the given top folder if $delete_topdir is set.
-     *
-     * @param string $dir
-     * @param bool $delete_topdir
+     * @param string  $db_type
+     * @param string  $db_host
+     * @param string  $db_user
+     * @param string  $db_pass
+     * @param string  $db_name
+     * @param string  $module_id
      */
-    protected static function rmdir_plus($dir, $delete_topdir=true)
+    public function verifyQCacheTables($db_type, $db_host, $db_user, $db_pass, $db_name, $module_id='')
     {
-        if (!file_exists($dir))
-            return;
+        $commitHash = trim(exec('git describe --tags --abbrev=0'));
 
-        foreach (array_diff(scandir($dir), ['.', '..']) as $file)
-            is_dir($path = $dir.DIRECTORY_SEPARATOR.$file) ? self::rmdir_plus($path) : unlink($path);
 
-        if ($delete_topdir)
-            rmdir($dir);
+        $conn = QCache::getConnection($db_type, $db_host, $db_user, $db_pass, $db_name, $module_id);
+
+        if ($module_id)
+            $module_id .= '_';
+
+        $sql = '';
+
+        foreach (['cache', 'logs', 'table_update_times'] as $table) {
+            $table_name = 'qc_' . $module_id . $table;
+            if (!$conn->tableExists($db_name, $table_name)) {
+                $func = 'getCreateTableSQL_' . $table;
+                $sql .= $conn->$func($table_name);
+            }
+        }
+
+        $conn->multi_query($sql);
     }
 }

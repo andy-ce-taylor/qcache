@@ -38,13 +38,20 @@ interface DbConnectorInterface
      * @param string  $sql
      * @return array
      */
-    public function processQuery($sql);
+    public function read($sql);
 
     /**
      * @param string  $sql
      * @return bool
      */
-    public function processUpdate($sql);
+    public function write($sql);
+
+    /**
+     * Process multiple queries.
+     * @param string $sql
+     * @return bool
+     */
+    public function multi_query($sql);
 
     /**
      * Returns the change times for the given tables.
@@ -53,4 +60,13 @@ interface DbConnectorInterface
      * @return int[]|false
      */
     public function getTableTimes($tables);
+
+    /**
+     * Return TRUE if the given table exists, otherwise FALSE.
+     *
+     * @param string $schema
+     * @param string $table
+     * @return bool
+     */
+    public function tableExists($schema, $table);
 }

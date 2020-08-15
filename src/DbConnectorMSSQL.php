@@ -6,7 +6,6 @@
 
 namespace acet\qcache;
 
-use acet\ResLock\ResLock;
 use DateTime;
 use Exception;
 
@@ -21,10 +20,8 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
     private $database_name;
 
     /** @var string */
-    private $table_times_file;
+    private $table_qc_table_times;
 
-    /** @var ResLock */
-    private $reslock;
     /**
      * DbConnectorMSSQL constructor.
      *
@@ -32,17 +29,17 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
      * @param string  $user
      * @param string  $pass
      * @param string  $database_name
-     * @param string  $temp_dir
+     * @param string  $module_id
      * @throws QCacheConnectionException
      */
-    function __construct($host, $user, $pass, $database_name, $temp_dir)
+    function __construct($host, $user, $pass, $database_name, $module_id='')
     {
         $this->conn = sqlsrv_connect(
             $host,
             [
-                "Database"  => $database_name,
-                "UID"       => $user,
-                "PWD"       => $pass
+                'Database'  => $database_name,
+                'UID'       => $user,
+                'PWD'       => $pass
             ]
         );
 
@@ -50,8 +47,11 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
             throw new QCacheConnectionException("MSSQL connection error");
 
         $this->database_name = $database_name;
-        $this->table_times_file = $temp_dir . DIRECTORY_SEPARATOR . self::MSSQL_TABLES_INFO_FILE_NAME;
-        $this->reslock = new ResLock($temp_dir);
+
+        if ($module_id)
+            $module_id .= '_';
+
+        $this->table_qc_table_times = 'qc_' . $module_id . 'table_times';
     }
 
     /**
@@ -121,10 +121,11 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
     }
 
     /**
+     * Process a table read request, such as SELECT, and return the response.
      * @param string $sql
      * @return array
      */
-    public function processQuery($sql)
+    public function read($sql)
     {
         $data = [];
 
@@ -136,10 +137,21 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
     }
 
     /**
+     * Process a table write request, such as INSERT or UPDATE.
      * @param string $sql
      * @return bool
      */
-    public function processUpdate($sql)
+    public function write($sql)
+    {
+        return (bool)sqlsrv_query($this->conn, $sql);
+    }
+
+    /**
+     * Process multiple queries.
+     * @param string $sql
+     * @return bool
+     */
+    public function multi_query($sql)
     {
         return (bool)sqlsrv_query($this->conn, $sql);
     }
@@ -156,10 +168,7 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
      */
     public function getTableTimes($tables=null)
     {
-        $specific_tables = '';
-
-        if ($tables)
-            $specific_tables = "AND OBJECT_ID IN (OBJECT_ID('".implode("'),OBJECT_ID('", $tables)."'))";
+        $specific_tables = $tables ? "AND OBJECT_ID IN (OBJECT_ID('".implode("'),OBJECT_ID('", $tables)."'))" : '';
 
         // typical timestamp value: 2019-02-05 12:07:08.345
         $sql_query = "
@@ -167,54 +176,48 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
             FROM sys.dm_db_index_usage_stats
             WHERE database_id = DB_ID('$this->database_name') $specific_tables";
 
-        if (($res = sqlsrv_query($this->conn, $sql_query)) == false)
+        if (($stmt1 = sqlsrv_query($this->conn, $sql_query)) == false)
             return false;
 
         $data = [];
 
         $current_timestamp = $this->getCurrentTimestamp();
 
-        $cached_table_times = JsonEncodedFileIO::read($this->table_times_file);
-        $cache_save_needed = false;
-
-        while($row = sqlsrv_fetch_array($res, SQLSRV_FETCH_ASSOC)) {
+        while ($row = sqlsrv_fetch_array($stmt1, SQLSRV_FETCH_ASSOC)) {
 
             $table_name = $row['TableName'];
 
-            if (array_key_exists($table_name, $cached_table_times))
-                $cached_timestamp = $cached_table_times[$table_name];
-            else
-                $cached_timestamp = $cached_table_times[$table_name] = null;
+            if ($update_time = $row['last_user_update'])
+                $timestamp = date_format($update_time, 'Y-m-d H:i:s'); // use the updated time
 
-            if (!is_null($update_time = $row['last_user_update'])) // use the updated time
-                $timestamp = date_format($update_time, 'Y-m-d H:i:s');
-            else // table hasn't been updated since SQL Server was started
-                $timestamp = $cached_timestamp ? $cached_timestamp : $current_timestamp;
+            else { // sys.dm_db_index_usage_stats hasn't been updated since SQL Server was started
 
-            if ($timestamp != $cached_timestamp) {
-                $cached_table_times[$table_name] = $timestamp;
-                $cache_save_needed = true;
+                // check whether update_time has been cached
+                $sql = "SELECT update_time FROM $this->table_qc_table_times WHERE name='$table_name'";
+                if (($stmt2 = sqlsrv_query($this->conn, $sql)) && ($row = sqlsrv_fetch_array($stmt2, SQLSRV_FETCH_ASSOC))) {
+                    // get the cached update_time
+                    $timestamp = $row['update_time'];
+                    sqlsrv_free_stmt($stmt2);
+                }
+                else {
+                    // set update_time to the current time and store it in the table_times cache
+                    $timestamp = $current_timestamp;
+                    $sql = "INSERT INTO $this->table_qc_table_times (name, update_time) VALUES('$table_name', $timestamp)";
+                }
+                $this->write($sql);
             }
 
             try {
+
                 $data[$table_name] = (int)(new DateTime($timestamp))->format('U');
+
             } catch (Exception $ex) {
-                sqlsrv_free_stmt($res);
+                sqlsrv_free_stmt($stmt1);
                 return false; // wrong time format
             }
         }
 
-        sqlsrv_free_stmt($res);
-
-        if ($cache_save_needed) {
-            // sort by key (table names)
-            ksort($cached_table_times);
-
-            // lock & save
-            $rl_key = $this->reslock->lock($this->table_times_file);
-            JsonEncodedFileIO::write($this->table_times_file, $cached_table_times);
-            $this->reslock->unlock($rl_key);
-        }
+        sqlsrv_free_stmt($stmt1);
 
         return $data;
     }
@@ -241,5 +244,91 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
 
         $result = sqlsrv_query($this->conn, $sql);
         return date_format(sqlsrv_fetch_array($result, SQLSRV_FETCH_ASSOC)['CURRENT_TIMESTAMP'], 'Y-m-d H:i:s');
+    }
+
+    /**
+     * Return TRUE if the given table exists, otherwise FALSE.
+     *
+     * @param string $schema
+     * @param string $table
+     * @return bool
+     */
+    public function tableExists($schema, $table)
+    {
+        $sql = "SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA='$schema' AND TABLE_NAME='$table'))";
+
+        return (bool)$this->read($sql);
+    }
+
+    /**
+     * Returns SQL to create the cache table.
+     * @param string  $table_name
+     * @param bool    $drop_first
+     * @return string
+     */
+    public function getCreateTableSQL_cache($table_name, $drop_first=true)
+    {
+        $sql = '';
+
+        if ($drop_first) $sql =  " IF OBJECT_ID('dbo.$table_name', 'U') IS NOT NULL BEGIN
+                                       DROP TABLE dbo.$table_name;";
+        $sql .=                  "     CREATE TABLE dbo.$table_name (
+                                           hash          NCHAR(32)          NOT NULL  PRIMARY KEY,
+                                           access_time   INT            DEFAULT NULL,
+                                           script        NVARCHAR(800)  DEFAULT NULL,
+                                           av_nanosecs   FLOAT          DEFAULT NULL,
+                                           impressions   INT            DEFAULT NULL,
+                                           description   NVARCHAR(200)  DEFAULT NULL,
+                                           tables_csv    NVARCHAR(200)  DEFAULT NULL,
+                                           data          TEXT
+                                       );";
+        if ($drop_first) $sql .= " END";
+
+        return $sql;
+    }
+
+    /**
+     * Returns SQL to create the logs table.
+     * @param string  $table_name
+     * @param bool    $drop_first
+     * @return string
+     */
+    public function getCreateTableSQL_logs($table_name, $drop_first=true)
+    {
+        $sql = '';
+
+        if ($drop_first) $sql =  " IF OBJECT_ID('dbo.$table_name', 'U') IS NOT NULL BEGIN
+                                       DROP TABLE dbo.$table_name;";
+        $sql .=                  "     CREATE TABLE dbo.$table_name (
+                                           id            INT            IDENTITY(1,1) PRIMARY KEY,
+                                           time          INT            DEFAULT NULL,
+                                           context       NCHAR(3)       DEFAULT NULL,
+                                           nanosecs      FLOAT          DEFAULT NULL,
+                                           hash          NCHAR(32)      DEFAULT NULL
+                                       );";
+        if ($drop_first) $sql .= " END";
+
+        return $sql;
+    }
+
+    /**
+     * Returns SQL to create the table_update_times table.
+     * @param string  $table_name
+     * @param bool    $drop_first
+     * @return string
+     */
+    public function getCreateTableSQL_table_update_times($table_name, $drop_first=true)
+    {
+        $sql = '';
+
+        if ($drop_first) $sql =  " IF OBJECT_ID('dbo.$table_name', 'U') IS NOT NULL BEGIN
+                                       DROP TABLE dbo.$table_name;";
+        $sql .=                  "     CREATE TABLE dbo.$table_name (
+                                           name          NVARCHAR(200)      NOT NULL  PRIMARY KEY,
+                                           update_time   INT            DEFAULT NULL
+                                       );";
+        if ($drop_first) $sql .= " END";
+
+        return $sql;
     }
 }

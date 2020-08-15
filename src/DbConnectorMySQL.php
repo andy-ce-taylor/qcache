@@ -26,9 +26,10 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
      * @param string  $user
      * @param string  $pass
      * @param string  $database_name
+     * @param string  $module_id
      * @throws QCacheConnectionException
      */
-    function __construct($host, $user, $pass, $database_name)
+    function __construct($host, $user, $pass, $database_name, $module_id)
     {
         $this->conn = new mysqli($host, $user, $pass, $database_name);
 
@@ -36,6 +37,11 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
             throw new QCacheConnectionException("MySQL connection error: " . $this->conn->connect_errno);
 
         $this->database_name = $database_name;
+
+        if ($module_id)
+            $module_id .= '_';
+
+        $this->table_qc_table_times = 'qc_' . $module_id . 'table_times';
     }
 
     /**
@@ -110,10 +116,11 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
     }
 
     /**
+     * Process a table read request, such as SELECT, and return the response.
      * @param string $sql
      * @return array
      */
-    public function processQuery($sql)
+    public function read($sql)
     {
         $data = [];
 
@@ -125,12 +132,23 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
     }
 
     /**
+     * Process a table write request, such as INSERT or UPDATE.
      * @param string $sql
      * @return bool
      */
-    public function processUpdate($sql)
+    public function write($sql)
     {
         return (bool)$this->conn->query($sql);
+    }
+
+    /**
+     * Process multiple queries.
+     * @param string $sql
+     * @return bool
+     */
+    public function multi_query($sql)
+    {
+        return (bool)$this->conn->multi_query($sql);
     }
 
     /**
@@ -141,10 +159,7 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
      */
     public function getTableTimes($tables=null)
     {
-        $specific_tables = '';
-
-        if ($tables)
-            $specific_tables = "AND TABLE_NAME IN ('" . implode("','", $tables) . "')";
+        $specific_tables = $tables ? "AND TABLE_NAME IN ('" . implode("','", $tables) . "')" : '';
 
         // typical timestamp value: 2020-05-24 12:01:23
         $sql_query = "
@@ -157,16 +172,97 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
 
         $data = [];
 
-        while ($row = $res->fetch_assoc())
+        while ($row = $res->fetch_assoc()) {
             try {
-                $data[$row['TABLE_NAME']] = (int)(new DateTime($row['UPDATE_TIME']))->format('U');
+                $update_time = (int)(new DateTime($row['UPDATE_TIME']))->format('U');
             } catch (Exception $ex) {
                 $res->free_result();
                 return false; // wrong time format
             }
 
+            $table_name = $row['TABLE_NAME'];
+            $data[$table_name] = $update_time;
+
+//          $this->conn->query(
+//              "INSERT INTO $this->table_qc_table_times (name, update_time) VALUES('$table_name', $update_time) " .
+//              "ON DUPLICATE KEY UPDATE name='$table_name', update_time=$update_time"
+//          );
+        }
+
         $res->free_result();
 
         return $data;
+    }
+
+    /**
+     * Return TRUE if the given table exists, otherwise FALSE.
+     *
+     * @param string $schema
+     * @param string $table
+     * @return bool
+     */
+    public function tableExists($schema, $table)
+    {
+        return (bool)$this->read("SHOW TABLES LIKE '$table'");
+    }
+
+    /**
+     * Returns SQL to create the cache table.
+     * @param string  $table_name
+     * @param bool    $drop_first
+     * @return string
+     */
+    public function getCreateTableSQL_cache($table_name, $drop_first=true)
+    {
+        $sql = $drop_first ? "DROP TABLE IF EXISTS $table_name;" : '';
+        $sql .= "             CREATE TABLE $table_name (
+                                  hash            CHAR(32)     PRIMARY KEY NOT NULL DEFAULT ' ',
+                                  access_time     INT(11)      DEFAULT NULL,
+                                  script          VARCHAR(800) DEFAULT NULL,
+                                  av_nanosecs     FLOAT        DEFAULT NULL,
+                                  impressions     INT(11)      DEFAULT NULL,
+                                  description     VARCHAR(200) DEFAULT NULL,
+                                  tables_csv      VARCHAR(200) DEFAULT NULL,
+                                  data            MEDIUMTEXT
+                                );";
+
+        return $sql;
+    }
+
+    /**
+     * Returns SQL to create the logs table.
+     * @param string  $table_name
+     * @param bool    $drop_first
+     * @return string
+     */
+    public function getCreateTableSQL_logs($table_name, $drop_first=true)
+    {
+        $sql = $drop_first ? "DROP TABLE IF EXISTS $table_name;" : '';
+        $sql .= "             CREATE TABLE $table_name (
+                                  id              INT(11)  PRIMARY KEY NOT NULL AUTO_INCREMENT,
+                                  time            INT(11)  DEFAULT NULL,
+                                  context         CHAR(3)  DEFAULT NULL,
+                                  nanosecs        FLOAT    DEFAULT NULL,
+                                  hash            CHAR(32) DEFAULT NULL
+                              );";
+
+        return $sql;
+    }
+
+    /**
+     * Returns SQL to create the table_update_times table.
+     * @param string  $table_name
+     * @param bool    $drop_first
+     * @return string
+     */
+    public function getCreateTableSQL_table_update_times($table_name, $drop_first=true)
+    {
+        $sql = $drop_first ? "DROP TABLE IF EXISTS $table_name;" : '';
+        $sql .= "             CREATE TABLE $table_name (
+                                  name            VARCHAR(200) PRIMARY KEY NOT NULL DEFAULT ' ',
+                                  update_time     INT(11)      DEFAULT NULL
+                              );";
+
+        return $sql;
     }
 }

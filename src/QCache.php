@@ -13,6 +13,12 @@ class QCache extends QCacheUtils
     /** @var bool */
     private $qcache_enabled;
 
+    /** @var string */
+    private $table_qc_cache;
+
+    /** @var string */
+    private $table_qc_logs;
+
     /** @var mixed */
     private $db_connection;
 
@@ -22,11 +28,11 @@ class QCache extends QCacheUtils
      * @param string  $db_user
      * @param string  $db_pass
      * @param string  $db_name
-     * @param string  $temp_dir
      * @param bool    $qcache_enabled
+     * @param string  $module_id
      * @throws QCacheConnectionException
      */
-    function __construct($db_type, $db_host, $db_user, $db_pass, $db_name, $temp_dir, $qcache_enabled=true) {
+    function __construct($db_type, $db_host, $db_user, $db_pass, $db_name, $qcache_enabled=true, $module_id='') {
         if (empty($db_type) ||
             empty($db_host) ||
             empty($db_user) ||
@@ -35,7 +41,13 @@ class QCache extends QCacheUtils
             throw new QCacheConnectionException("Missing database connection details");
 
         $this->qcache_enabled = $qcache_enabled;
-        $this->db_connection = self::getConnection($db_type, $db_host, $db_user, $db_pass, $db_name, $temp_dir);
+        $this->db_connection = self::getConnection($db_type, $db_host, $db_user, $db_pass, $db_name, $module_id);
+
+        if ($module_id)
+            $module_id .= '_';
+
+        $this->table_qc_cache = 'qc_' . $module_id . 'cache';
+        $this->table_qc_logs  = 'qc_' . $module_id . 'logs';
     }
 
     /**
@@ -59,9 +71,9 @@ class QCache extends QCacheUtils
 
         $hash = hash('md5', $sql = trim($sql));
 
-        $sql_get_cache = "SELECT access_time, av_nanosecs, impressions, tables_csv, data FROM qc_cache WHERE hash='$hash'";
+        $sql_get_cache = "SELECT access_time, av_nanosecs, impressions, tables_csv, data FROM $this->table_qc_cache WHERE hash='$hash'";
 
-        if ($fileinfo = $this->db_connection->processQuery($sql_get_cache)) {
+        if ($fileinfo = $this->db_connection->read($sql_get_cache)) {
             
             // SQL statement has been seen before
             
@@ -74,19 +86,19 @@ class QCache extends QCacheUtils
 
                 // perform a fresh query and update cache
                 $start_nanosecs = hrtime(true); // restart nanosecond timer
-                $resultset = new SqlResultSet($this->db_connection->processQuery($sql));
+                $resultset = new SqlResultSet($this->db_connection->read($sql));
                 $elapsed_nanosecs = hrtime(true) - $start_nanosecs;
 
                 $av_nanosecs = (float)($elapsed_nanosecs + $av_nanosecs * $impressions++) / $impressions;
                 $data = $this->db_connection->sql_escape_string(serialize($resultset));
 
-                $sql = "UPDATE qc_cache " .
+                $sql = "UPDATE $this->table_qc_cache " .
                        "SET access_time=$access_time, av_nanosecs=$av_nanosecs, impressions=$impressions, data='$data' WHERE hash='$hash'";
-                $this->db_connection->processUpdate($sql);
+                $this->db_connection->write($sql);
 
-                $sql = "INSERT INTO qc_log (time, context, nanosecs, hash) " .
+                $sql = "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) " .
                        "VALUES ($time_now, 'db', $elapsed_nanosecs, '$hash')";
-                $this->db_connection->processUpdate($sql);
+                $this->db_connection->write($sql);
 
                 return $resultset;
             }
@@ -95,8 +107,8 @@ class QCache extends QCacheUtils
             $resultset = unserialize($data);
             $elapsed_nanosecs = hrtime(true) - $start_nanosecs;
 
-            $sql = "INSERT INTO qc_log (time, context, nanosecs, hash) VALUES ($time_now, 'qc', $elapsed_nanosecs, '$hash')";
-            $this->db_connection->processUpdate($sql);
+            $sql = "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) VALUES ($time_now, 'qc', $elapsed_nanosecs, '$hash')";
+            $this->db_connection->write($sql);
 
             return $resultset;
         }
@@ -110,19 +122,19 @@ class QCache extends QCacheUtils
         $tables_csv = is_array($tables) ? implode(',', $tables) : $tables;
 
         $start_nanosecs = hrtime(true); // restart nanosecond timer
-        $resultset = new SqlResultSet($this->db_connection->processQuery($sql));
+        $resultset = new SqlResultSet($this->db_connection->read($sql));
         $elapsed_nanosecs = hrtime(true) - $start_nanosecs;
 
         $description = $this->db_connection->sql_escape_string($description);
         $script = $this->db_connection->sql_escape_string($sql);
         $data = $this->db_connection->sql_escape_string(serialize($resultset));
         
-        $sql = "INSERT INTO qc_cache (hash, access_time, script, av_nanosecs, impressions, description, tables_csv, data) " .
+        $sql = "INSERT INTO $this->table_qc_cache (hash, access_time, script, av_nanosecs, impressions, description, tables_csv, data) " .
                "VALUES ('$hash', $time_now, '$script', $elapsed_nanosecs, 1, '$description', '$tables_csv', '$data')";
-        $this->db_connection->processUpdate($sql);
+        $this->db_connection->write($sql);
 
-        $sql = "INSERT INTO qc_log (time, context, nanosecs, hash) VALUES ($time_now, 'db', $elapsed_nanosecs, '$hash')";
-        $this->db_connection->processUpdate($sql);
+        $sql = "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) VALUES ($time_now, 'db', $elapsed_nanosecs, '$hash')";
+        $this->db_connection->write($sql);
 
         return $resultset;
     }
@@ -133,18 +145,18 @@ class QCache extends QCacheUtils
      * @param string  $db_user
      * @param string  $db_pass
      * @param string  $db_name
-     * @param string  $temp_dir
+     * @param string  $module_id
      * @return DbConnectorMySQL|DbConnectorMSSQL
      * @throws QCacheConnectionException
      */
-    public static function getConnection($db_type, $db_host, $db_user, $db_pass, $db_name, $temp_dir)
+    public static function getConnection($db_type, $db_host, $db_user, $db_pass, $db_name, $module_id='')
     {
         switch ($db_type) {
             case 'mysql':
-                return new DbConnectorMySQL($db_host, $db_user, $db_pass, $db_name);
+                return new DbConnectorMySQL($db_host, $db_user, $db_pass, $db_name, $module_id);
 
             case 'mssql':
-                return new DbConnectorMSSQL($db_host, $db_user, $db_pass, $db_name, $temp_dir);
+                return new DbConnectorMSSQL($db_host, $db_user, $db_pass, $db_name, $module_id);
         }
 
         // whoops! unsupported database type
