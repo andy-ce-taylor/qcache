@@ -1,7 +1,7 @@
 # Change Log
 
 ### 1.1.3
-- QCache is now capable of creating it's own tables.
+- QCache to create it's own tables.
 - Refactored various sections of code.
 
 ### 1.1.2

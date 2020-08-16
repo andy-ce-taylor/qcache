@@ -8,6 +8,8 @@ namespace acet\qcache;
 
 class QCacheUtils
 {
+    const QCACHE_VERSION_FILE = 'local_version.txt';
+
     /**
      * Returns a description suitable for passing to QCache::query.
      *
@@ -120,7 +122,7 @@ class QCacheUtils
      * @param string  $db_name
      * @param string  $module_id
      */
-    public static function clearCache($db_type, $db_host, $db_user, $db_pass, $db_name, $module_id='')
+    public function clearCache($db_type, $db_host, $db_user, $db_pass, $db_name, $module_id='')
     {
         $conn = QCache::getConnection($db_type, $db_host, $db_user, $db_pass, $db_name, $module_id);
 
@@ -135,6 +137,9 @@ class QCacheUtils
     }
 
     /**
+     * Rebuild Qcache database tables if the Qcache version (according to the CHANGELOG) has
+     * been updated or the tables are missing.
+     *
      * @param string  $db_type
      * @param string  $db_host
      * @param string  $db_user
@@ -144,24 +149,54 @@ class QCacheUtils
      */
     public function verifyQCacheTables($db_type, $db_host, $db_user, $db_pass, $db_name, $module_id='')
     {
-        $commitHash = trim(exec('git describe --tags --abbrev=0'));
-
+        $v_change = self::qcacheVersionChange();
 
         $conn = QCache::getConnection($db_type, $db_host, $db_user, $db_pass, $db_name, $module_id);
 
         if ($module_id)
             $module_id .= '_';
 
+        $prefix = "qc_{$module_id}";
+
         $sql = '';
 
-        foreach (['cache', 'logs', 'table_update_times'] as $table) {
-            $table_name = 'qc_' . $module_id . $table;
-            if (!$conn->tableExists($db_name, $table_name)) {
-                $func = 'getCreateTableSQL_' . $table;
-                $sql .= $conn->$func($table_name);
-            }
+        $table_name = $prefix . "cache";
+        if ($v_change || !$conn->tableExists($db_name, $table_name))
+            $sql .= $conn->getCreateTableSQL_cache($table_name);
+
+        $table_name = $prefix . "logs";
+        if ($v_change || !$conn->tableExists($db_name, $table_name))
+            $sql .= $conn->getCreateTableSQL_logs($table_name);
+
+        $table_name = $prefix . "table_update_times";
+        if ($v_change || !$conn->tableExists($db_name, $table_name))
+            $sql .= $conn->getCreateTableSQL_table_update_times($table_name);
+
+        if ($sql)
+            $conn->multi_query($sql);
+    }
+
+    /**
+     * Returns TRUE if CHANGELOG reports a new version.
+     *
+     * @return bool
+     */
+    private static function qcacheVersionChange()
+    {
+        $clog = file_get_contents(__DIR__ . '/../CHANGELOG.md');
+        $pos = strpos($clog, '###');
+        $clog_version = trim(substr($clog, $pos + 4, strpos($clog, "\n", $pos) - $pos - 4));
+
+        $qcache_version = '';
+
+        if (file_exists($version_file = __DIR__ . '/../' . self::QCACHE_VERSION_FILE))
+            $qcache_version = trim(file_get_contents($version_file));
+
+        if ($qcache_version != $clog_version) {
+            file_put_contents($version_file, $clog_version);
+            return true;
         }
 
-        $conn->multi_query($sql);
+        return false;
     }
 }

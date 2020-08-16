@@ -69,4 +69,25 @@ interface DbConnectorInterface
      * @return bool
      */
     public function tableExists($schema, $table);
+
+    /**
+     * Returns SQL to create the cache table.
+     * @param string  $table_name
+     * @return string
+     */
+    public function getCreateTableSQL_cache($table_name);
+
+    /**
+     * Returns SQL to create the logs table.
+     * @param string  $table_name
+     * @return string
+     */
+    public function getCreateTableSQL_logs($table_name);
+
+    /**
+     * Returns SQL to create the update times table.
+     * @param string  $table_name
+     * @return string
+     */
+    public function getCreateTableSQL_table_update_times($table_name);
 }

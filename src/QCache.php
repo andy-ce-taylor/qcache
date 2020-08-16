@@ -33,11 +33,7 @@ class QCache extends QCacheUtils
      * @throws QCacheConnectionException
      */
     function __construct($db_type, $db_host, $db_user, $db_pass, $db_name, $qcache_enabled=true, $module_id='') {
-        if (empty($db_type) ||
-            empty($db_host) ||
-            empty($db_user) ||
-            empty($db_pass) ||
-            empty($db_name))
+        if (!$db_type || !$db_host || !$db_user || !$db_pass || !$db_name)
             throw new QCacheConnectionException("Missing database connection details");
 
         $this->qcache_enabled = $qcache_enabled;

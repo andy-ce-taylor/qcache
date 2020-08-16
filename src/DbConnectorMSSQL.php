@@ -263,72 +263,57 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
     /**
      * Returns SQL to create the cache table.
      * @param string  $table_name
-     * @param bool    $drop_first
      * @return string
      */
-    public function getCreateTableSQL_cache($table_name, $drop_first=true)
+    public function getCreateTableSQL_cache($table_name)
     {
-        $sql = '';
-
-        if ($drop_first) $sql =  " IF OBJECT_ID('dbo.$table_name', 'U') IS NOT NULL BEGIN
-                                       DROP TABLE dbo.$table_name;";
-        $sql .=                  "     CREATE TABLE dbo.$table_name (
-                                           hash          NCHAR(32)          NOT NULL  PRIMARY KEY,
-                                           access_time   INT            DEFAULT NULL,
-                                           script        NVARCHAR(800)  DEFAULT NULL,
-                                           av_nanosecs   FLOAT          DEFAULT NULL,
-                                           impressions   INT            DEFAULT NULL,
-                                           description   NVARCHAR(200)  DEFAULT NULL,
-                                           tables_csv    NVARCHAR(200)  DEFAULT NULL,
-                                           data          TEXT
-                                       );";
-        if ($drop_first) $sql .= " END";
-
-        return $sql;
+        return "IF OBJECT_ID('dbo.$table_name', 'U') IS NOT NULL BEGIN
+                    DROP TABLE dbo.$table_name;
+                END;
+                CREATE TABLE dbo.$table_name (
+                    hash          NCHAR(32)          NOT NULL  PRIMARY KEY,
+                    access_time   INT            DEFAULT NULL,
+                    script        NVARCHAR(800)  DEFAULT NULL,
+                    av_nanosecs   FLOAT          DEFAULT NULL,
+                    impressions   INT            DEFAULT NULL,
+                    description   NVARCHAR(200)  DEFAULT NULL,
+                    tables_csv    NVARCHAR(200)  DEFAULT NULL,
+                    data          TEXT
+                );";
     }
 
     /**
      * Returns SQL to create the logs table.
      * @param string  $table_name
-     * @param bool    $drop_first
      * @return string
      */
-    public function getCreateTableSQL_logs($table_name, $drop_first=true)
+    public function getCreateTableSQL_logs($table_name)
     {
-        $sql = '';
-
-        if ($drop_first) $sql =  " IF OBJECT_ID('dbo.$table_name', 'U') IS NOT NULL BEGIN
-                                       DROP TABLE dbo.$table_name;";
-        $sql .=                  "     CREATE TABLE dbo.$table_name (
-                                           id            INT            IDENTITY(1,1) PRIMARY KEY,
-                                           time          INT            DEFAULT NULL,
-                                           context       NCHAR(3)       DEFAULT NULL,
-                                           nanosecs      FLOAT          DEFAULT NULL,
-                                           hash          NCHAR(32)      DEFAULT NULL
-                                       );";
-        if ($drop_first) $sql .= " END";
-
-        return $sql;
+        return "IF OBJECT_ID('dbo.$table_name', 'U') IS NOT NULL BEGIN
+                    DROP TABLE dbo.$table_name;
+                END;
+                CREATE TABLE dbo.$table_name (
+                    id            INT            IDENTITY(1,1) PRIMARY KEY,
+                    time          INT            DEFAULT NULL,
+                    context       NCHAR(3)       DEFAULT NULL,
+                    nanosecs      FLOAT          DEFAULT NULL,
+                    hash          NCHAR(32)      DEFAULT NULL
+                );";
     }
 
     /**
-     * Returns SQL to create the table_update_times table.
+     * Returns SQL to create the update times table.
      * @param string  $table_name
-     * @param bool    $drop_first
      * @return string
      */
-    public function getCreateTableSQL_table_update_times($table_name, $drop_first=true)
+    public function getCreateTableSQL_table_update_times($table_name)
     {
-        $sql = '';
-
-        if ($drop_first) $sql =  " IF OBJECT_ID('dbo.$table_name', 'U') IS NOT NULL BEGIN
-                                       DROP TABLE dbo.$table_name;";
-        $sql .=                  "     CREATE TABLE dbo.$table_name (
-                                           name          NVARCHAR(200)      NOT NULL  PRIMARY KEY,
-                                           update_time   INT            DEFAULT NULL
-                                       );";
-        if ($drop_first) $sql .= " END";
-
-        return $sql;
+        return "IF OBJECT_ID('dbo.$table_name', 'U') IS NOT NULL BEGIN
+                    DROP TABLE dbo.$table_name;
+                END;
+                CREATE TABLE dbo.$table_name (
+                    name          NVARCHAR(200)      NOT NULL  PRIMARY KEY,
+                    update_time   INT            DEFAULT NULL
+                );";
     }
 }

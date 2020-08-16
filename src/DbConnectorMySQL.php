@@ -209,60 +209,51 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
     /**
      * Returns SQL to create the cache table.
      * @param string  $table_name
-     * @param bool    $drop_first
      * @return string
      */
-    public function getCreateTableSQL_cache($table_name, $drop_first=true)
+    public function getCreateTableSQL_cache($table_name)
     {
-        $sql = $drop_first ? "DROP TABLE IF EXISTS $table_name;" : '';
-        $sql .= "             CREATE TABLE $table_name (
-                                  hash            CHAR(32)     PRIMARY KEY NOT NULL DEFAULT ' ',
-                                  access_time     INT(11)      DEFAULT NULL,
-                                  script          VARCHAR(800) DEFAULT NULL,
-                                  av_nanosecs     FLOAT        DEFAULT NULL,
-                                  impressions     INT(11)      DEFAULT NULL,
-                                  description     VARCHAR(200) DEFAULT NULL,
-                                  tables_csv      VARCHAR(200) DEFAULT NULL,
-                                  data            MEDIUMTEXT
-                                );";
-
-        return $sql;
+        return "DROP TABLE IF EXISTS $table_name;
+                CREATE TABLE $table_name (
+                    hash            CHAR(32)     PRIMARY KEY NOT NULL DEFAULT ' ',
+                    access_time     INT(11)      DEFAULT NULL,
+                    script          VARCHAR(800) DEFAULT NULL,
+                    av_nanosecs     FLOAT        DEFAULT NULL,
+                    impressions     INT(11)      DEFAULT NULL,
+                    description     VARCHAR(200) DEFAULT NULL,
+                    tables_csv      VARCHAR(200) DEFAULT NULL,
+                    data            MEDIUMTEXT
+                );";
     }
 
     /**
      * Returns SQL to create the logs table.
      * @param string  $table_name
-     * @param bool    $drop_first
      * @return string
      */
-    public function getCreateTableSQL_logs($table_name, $drop_first=true)
+    public function getCreateTableSQL_logs($table_name)
     {
-        $sql = $drop_first ? "DROP TABLE IF EXISTS $table_name;" : '';
-        $sql .= "             CREATE TABLE $table_name (
-                                  id              INT(11)  PRIMARY KEY NOT NULL AUTO_INCREMENT,
-                                  time            INT(11)  DEFAULT NULL,
-                                  context         CHAR(3)  DEFAULT NULL,
-                                  nanosecs        FLOAT    DEFAULT NULL,
-                                  hash            CHAR(32) DEFAULT NULL
-                              );";
-
-        return $sql;
+        return "DROP TABLE IF EXISTS $table_name;
+                CREATE TABLE $table_name (
+                    id              INT(11)  PRIMARY KEY NOT NULL AUTO_INCREMENT,
+                    time            INT(11)  DEFAULT NULL,
+                    context         CHAR(3)  DEFAULT NULL,
+                    nanosecs        FLOAT    DEFAULT NULL,
+                    hash            CHAR(32) DEFAULT NULL
+                );";
     }
 
     /**
-     * Returns SQL to create the table_update_times table.
+     * Returns SQL to create the update times table.
      * @param string  $table_name
-     * @param bool    $drop_first
      * @return string
      */
-    public function getCreateTableSQL_table_update_times($table_name, $drop_first=true)
+    public function getCreateTableSQL_table_update_times($table_name)
     {
-        $sql = $drop_first ? "DROP TABLE IF EXISTS $table_name;" : '';
-        $sql .= "             CREATE TABLE $table_name (
-                                  name            VARCHAR(200) PRIMARY KEY NOT NULL DEFAULT ' ',
-                                  update_time     INT(11)      DEFAULT NULL
-                              );";
-
-        return $sql;
+        return "DROP TABLE IF EXISTS $table_name;
+                CREATE TABLE $table_name (
+                    name            VARCHAR(200) PRIMARY KEY NOT NULL DEFAULT ' ',
+                    update_time     INT(11)      DEFAULT NULL
+                );";
     }
 }
