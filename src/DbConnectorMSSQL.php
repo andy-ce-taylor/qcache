@@ -163,9 +163,9 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
     /**
      * Returns the change times for the given tables.
      *
-     * FYI: Table changes are recorded in sys.dm_db_index_usage_stats, but unlike the
-     * equivalent MySQL method, this table gets reset whenever SQL is restarted. For
-     * this reason, a file is used to maintain the latest table change times.
+     * Dev Notes: Table changes are recorded in sys.dm_db_index_usage_stats, but unlike the
+     * equivalent MySQL method, this table gets reset whenever MSSQL restarts. For this
+     * reason, a file is used to maintain the latest table change times.
      *
      * @param string[]|null  $tables
      * @return int[]|false
@@ -185,19 +185,20 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
 
         $data = [];
 
-        $current_timestamp = $this->getCurrentTimestamp();
+        $current_timestamp = (int)(new DateTime($this->getCurrentTimestamp()))->format('U');
 
         while ($row = sqlsrv_fetch_array($stmt1, SQLSRV_FETCH_ASSOC)) {
 
             $table_name = $row['TableName'];
 
             if ($update_time = $row['last_user_update'])
-                $timestamp = date_format($update_time, 'Y-m-d H:i:s'); // use the updated time
+                $timestamp = (int)(new DateTime(date_format($update_time, 'Y-m-d H:i:s')))->format('U'); // use the updated time
 
             else { // sys.dm_db_index_usage_stats hasn't been updated since SQL Server was started
 
                 // check whether update_time has been cached
                 $sql = "SELECT update_time FROM $this->table_qc_table_update_times WHERE name='$table_name'";
+
                 if (($stmt2 = sqlsrv_query($this->conn, $sql)) && ($row = sqlsrv_fetch_array($stmt2, SQLSRV_FETCH_ASSOC))) {
                     // get the cached update_time
                     $timestamp = $row['update_time'];
@@ -211,14 +212,7 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
                 $this->write($sql);
             }
 
-            try {
-
-                $data[$table_name] = (int)(new DateTime($timestamp))->format('U');
-
-            } catch (Exception $ex) {
-                sqlsrv_free_stmt($stmt1);
-                return false; // wrong time format
-            }
+            $data[$table_name] = $timestamp;
         }
 
         sqlsrv_free_stmt($stmt1);

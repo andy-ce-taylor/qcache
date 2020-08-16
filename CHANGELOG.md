@@ -1,5 +1,8 @@
 # Change Log
 
+### 1.1.5
+- Fixed MSSQL table update error.
+
 ### 1.1.4
 - Selective caching to either DB or file according to performance constraints.
 - Auto rebuild tables on schema change.
