@@ -1,5 +1,11 @@
 # Change Log
 
+### 1.1.4
+- Selective caching to either DB or file according to performance constraints.
+- Auto rebuild tables on schema change.
+- Improved T-SQL support.
+- Various optimizations.
+
 ### 1.1.3
 - QCache to create it's own tables.
 - Refactored various sections of code.

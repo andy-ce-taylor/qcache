@@ -8,8 +8,6 @@ namespace acet\qcache;
 
 class QCacheUtils
 {
-    const QCACHE_VERSION_FILE = 'local_version.txt';
-
     /**
      * Returns a description suitable for passing to QCache::query.
      *
@@ -120,9 +118,10 @@ class QCacheUtils
      * @param string  $db_user
      * @param string  $db_pass
      * @param string  $db_name
+     * @param string  $qcache_folder
      * @param string  $module_id
      */
-    public function clearCache($db_type, $db_host, $db_user, $db_pass, $db_name, $module_id='')
+    public function clearCache($db_type, $db_host, $db_user, $db_pass, $db_name, $qcache_folder, $module_id='')
     {
         $conn = QCache::getConnection($db_type, $db_host, $db_user, $db_pass, $db_name, $module_id);
 
@@ -134,6 +133,9 @@ class QCacheUtils
 
         $conn->write("TRUNCATE TABLE $table_qc_cache");
 //      $conn->write("TRUNCATE TABLE $table_qc_logs");
+
+        // delete cache files
+        self::rmdir_plus($qcache_folder, false);
     }
 
     /**
@@ -145,31 +147,37 @@ class QCacheUtils
      * @param string  $db_user
      * @param string  $db_pass
      * @param string  $db_name
+     * @param string  $qcache_folder
      * @param string  $module_id
      */
-    public function verifyQCacheTables($db_type, $db_host, $db_user, $db_pass, $db_name, $module_id='')
+    public function verifyQCacheTables($db_type, $db_host, $db_user, $db_pass, $db_name, $qcache_folder, $module_id='')
     {
-        $v_change = self::qcacheVersionChange();
+        $schema_changed = self::detectSchemaChange();
+
+        if ($schema_changed) {
+            // delete cache files
+            self::rmdir_plus($qcache_folder, false);
+        }
 
         $conn = QCache::getConnection($db_type, $db_host, $db_user, $db_pass, $db_name, $module_id);
 
         if ($module_id)
             $module_id .= '_';
 
-        $prefix = "qc_{$module_id}";
+        $prefix = 'qc_' . $module_id;
 
         $sql = '';
 
         $table_name = $prefix . "cache";
-        if ($v_change || !$conn->tableExists($db_name, $table_name))
+        if ($schema_changed || !$conn->tableExists($db_name, $table_name))
             $sql .= $conn->getCreateTableSQL_cache($table_name);
 
         $table_name = $prefix . "logs";
-        if ($v_change || !$conn->tableExists($db_name, $table_name))
+        if ($schema_changed || !$conn->tableExists($db_name, $table_name))
             $sql .= $conn->getCreateTableSQL_logs($table_name);
 
         $table_name = $prefix . "table_update_times";
-        if ($v_change || !$conn->tableExists($db_name, $table_name))
+        if ($schema_changed || !$conn->tableExists($db_name, $table_name))
             $sql .= $conn->getCreateTableSQL_table_update_times($table_name);
 
         if ($sql)
@@ -177,26 +185,49 @@ class QCacheUtils
     }
 
     /**
-     * Returns TRUE if CHANGELOG reports a new version.
+     * Returns TRUE if table schemas have changed.
      *
      * @return bool
      */
-    private static function qcacheVersionChange()
+    private static function detectSchemaChange()
     {
-        $clog = file_get_contents(__DIR__ . '/../CHANGELOG.md');
-        $pos = strpos($clog, '###');
-        $clog_version = trim(substr($clog, $pos + 4, strpos($clog, "\n", $pos) - $pos - 4));
+        $d = __DIR__ . DIRECTORY_SEPARATOR;
+        $schema_crc =
+            crc32(file_get_contents("{$d}DbConnectorMySQL.php")) ^
+            crc32(file_get_contents("{$d}DbConnectorMSSQL.php")) ^
+            crc32(file_get_contents("{$d}Constants.php"));
 
-        $qcache_version = '';
+        $reported_schema_crc = 0;
+        if (file_exists($checksum_file = __DIR__ . '/../' . Constants::SCHEMA_CHECKSUM_FILE))
+            $reported_schema_crc = (int)file_get_contents($checksum_file);
 
-        if (file_exists($version_file = __DIR__ . '/../' . self::QCACHE_VERSION_FILE))
-            $qcache_version = trim(file_get_contents($version_file));
-
-        if ($qcache_version != $clog_version) {
-            file_put_contents($version_file, $clog_version);
+        if ($reported_schema_crc != $schema_crc) {
+            file_put_contents($checksum_file, $schema_crc);
             return true;
         }
 
         return false;
+    }
+
+    /**
+     * Recursively delete sub-folders and their contents.
+     * Also delete the given top folder if $delete_topdir is set.
+     *
+     * @param string $dir
+     * @param bool $delete_topdir
+     */
+    private static function rmdir_plus($dir, $delete_topdir=true)
+    {
+        if (!file_exists($dir)) {
+            return;
+        }
+
+        foreach (array_diff(scandir($dir), ['.', '..']) as $file) {
+            is_dir($path = $dir.DIRECTORY_SEPARATOR.$file) ? self::rmdir_plus($path) : unlink($path);
+        }
+
+        if ($delete_topdir) {
+            rmdir($dir);
+        }
     }
 }

@@ -45,12 +45,12 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
     }
 
     /**
-     * @param string $str
+     * @param string $data
      * @return string
      */
-    public function sql_escape_string($str)
+    public function escapeBinData($data)
     {
-        return $this->conn->escape_string($str);
+        return "'" . $this->conn->real_escape_string($data) . "'";
     }
 
     /**
@@ -213,16 +213,18 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
      */
     public function getCreateTableSQL_cache($table_name)
     {
+        $max_resultset_size = Constants::MAX_DB_RESULTSET_SIZE;
+
         return "DROP TABLE IF EXISTS $table_name;
                 CREATE TABLE $table_name (
-                    hash            CHAR(32)     PRIMARY KEY NOT NULL DEFAULT ' ',
-                    access_time     INT(11)      DEFAULT NULL,
-                    script          VARCHAR(800) DEFAULT NULL,
-                    av_nanosecs     FLOAT        DEFAULT NULL,
-                    impressions     INT(11)      DEFAULT NULL,
-                    description     VARCHAR(200) DEFAULT NULL,
-                    tables_csv      VARCHAR(200) DEFAULT NULL,
-                    data            MEDIUMTEXT
+                    hash            CHAR(32)            NOT NULL PRIMARY KEY DEFAULT ' ',
+                    access_time     INT(11)         DEFAULT NULL,
+                    script          VARCHAR(4000)   DEFAULT NULL,
+                    av_nanosecs     FLOAT           DEFAULT NULL,
+                    impressions     INT(11)         DEFAULT NULL,
+                    description     VARCHAR(200)    DEFAULT NULL,
+                    tables_csv      VARCHAR(1000)   DEFAULT NULL,
+                    resultset       VARCHAR($max_resultset_size)
                 );";
     }
 
@@ -235,11 +237,11 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
     {
         return "DROP TABLE IF EXISTS $table_name;
                 CREATE TABLE $table_name (
-                    id              INT(11)  PRIMARY KEY NOT NULL AUTO_INCREMENT,
-                    time            INT(11)  DEFAULT NULL,
-                    context         CHAR(3)  DEFAULT NULL,
-                    nanosecs        FLOAT    DEFAULT NULL,
-                    hash            CHAR(32) DEFAULT NULL
+                    id              INT(11)             NOT NULL PRIMARY KEY AUTO_INCREMENT,
+                    time            INT(11)         DEFAULT NULL,
+                    context         CHAR(4)         DEFAULT NULL,
+                    nanosecs        FLOAT           DEFAULT NULL,
+                    hash            CHAR(32)        DEFAULT NULL
                 );";
     }
 
@@ -252,8 +254,8 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
     {
         return "DROP TABLE IF EXISTS $table_name;
                 CREATE TABLE $table_name (
-                    name            VARCHAR(200) PRIMARY KEY NOT NULL DEFAULT ' ',
-                    update_time     INT(11)      DEFAULT NULL
+                    name            VARCHAR(80)         NOT NULL PRIMARY KEY DEFAULT ' ',
+                    update_time     INT(11)         DEFAULT NULL
                 );";
     }
 }

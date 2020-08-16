@@ -20,7 +20,7 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
     private $database_name;
 
     /** @var string */
-    private $table_qc_table_times;
+    private $table_qc_table_update_times;
 
     /**
      * DbConnectorMSSQL constructor.
@@ -51,16 +51,20 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
         if ($module_id)
             $module_id .= '_';
 
-        $this->table_qc_table_times = 'qc_' . $module_id . 'table_times';
+        $this->table_qc_table_update_times = 'dbo.qc_' . $module_id . 'table_update_times';
     }
 
     /**
-     * @param string $str
+     * @param string $data
      * @return string
      */
-    public function sql_escape_string($str)
+    public function escapeBinData($data)
     {
-        $unpacked = unpack('H*hex', $str);
+        if (is_numeric($data))
+            return $data;
+
+        $unpacked = unpack('H*hex', $data);
+
         return '0x' . $unpacked['hex'];
     }
 
@@ -193,16 +197,16 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
             else { // sys.dm_db_index_usage_stats hasn't been updated since SQL Server was started
 
                 // check whether update_time has been cached
-                $sql = "SELECT update_time FROM $this->table_qc_table_times WHERE name='$table_name'";
+                $sql = "SELECT update_time FROM $this->table_qc_table_update_times WHERE name='$table_name'";
                 if (($stmt2 = sqlsrv_query($this->conn, $sql)) && ($row = sqlsrv_fetch_array($stmt2, SQLSRV_FETCH_ASSOC))) {
                     // get the cached update_time
                     $timestamp = $row['update_time'];
                     sqlsrv_free_stmt($stmt2);
                 }
                 else {
-                    // set update_time to the current time and store it in the table_times cache
+                    // set update_time to the current time and store it in the table_update_times cache
                     $timestamp = $current_timestamp;
-                    $sql = "INSERT INTO $this->table_qc_table_times (name, update_time) VALUES('$table_name', $timestamp)";
+                    $sql = "INSERT INTO $this->table_qc_table_update_times (name, update_time) VALUES('$table_name', $timestamp)";
                 }
                 $this->write($sql);
             }
@@ -267,18 +271,21 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
      */
     public function getCreateTableSQL_cache($table_name)
     {
-        return "IF OBJECT_ID('dbo.$table_name', 'U') IS NOT NULL BEGIN
-                    DROP TABLE dbo.$table_name;
+        $table_name = 'dbo.' . $table_name;
+        $max_resultset_size = Constants::MAX_DB_RESULTSET_SIZE;
+
+        return "IF OBJECT_ID('$table_name', 'U') IS NOT NULL BEGIN
+                    DROP TABLE $table_name;
                 END;
-                CREATE TABLE dbo.$table_name (
-                    hash          NCHAR(32)          NOT NULL  PRIMARY KEY,
-                    access_time   INT            DEFAULT NULL,
-                    script        NVARCHAR(800)  DEFAULT NULL,
-                    av_nanosecs   FLOAT          DEFAULT NULL,
-                    impressions   INT            DEFAULT NULL,
-                    description   NVARCHAR(200)  DEFAULT NULL,
-                    tables_csv    NVARCHAR(200)  DEFAULT NULL,
-                    data          TEXT
+                CREATE TABLE $table_name (
+                    hash            CHAR(32)            NOT NULL  PRIMARY KEY,
+                    access_time     INT             DEFAULT NULL,
+                    script          VARCHAR(4000)   DEFAULT NULL,
+                    av_nanosecs     FLOAT           DEFAULT NULL,
+                    impressions     INT             DEFAULT NULL,
+                    description     VARCHAR(200)    DEFAULT NULL,
+                    tables_csv      VARCHAR(1000)   DEFAULT NULL,
+                    resultset       VARCHAR($max_resultset_size)
                 );";
     }
 
@@ -289,15 +296,16 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
      */
     public function getCreateTableSQL_logs($table_name)
     {
-        return "IF OBJECT_ID('dbo.$table_name', 'U') IS NOT NULL BEGIN
-                    DROP TABLE dbo.$table_name;
+        $table_name = 'dbo.' . $table_name;
+        return "IF OBJECT_ID('$table_name', 'U') IS NOT NULL BEGIN
+                    DROP TABLE $table_name;
                 END;
-                CREATE TABLE dbo.$table_name (
-                    id            INT            IDENTITY(1,1) PRIMARY KEY,
-                    time          INT            DEFAULT NULL,
-                    context       NCHAR(3)       DEFAULT NULL,
-                    nanosecs      FLOAT          DEFAULT NULL,
-                    hash          NCHAR(32)      DEFAULT NULL
+                CREATE TABLE $table_name (
+                    id              INT             IDENTITY(1,1) PRIMARY KEY,
+                    time            INT             DEFAULT NULL,
+                    context         CHAR(4)         DEFAULT NULL,
+                    nanosecs        FLOAT           DEFAULT NULL,
+                    hash            CHAR(32)        DEFAULT NULL
                 );";
     }
 
@@ -308,12 +316,13 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
      */
     public function getCreateTableSQL_table_update_times($table_name)
     {
-        return "IF OBJECT_ID('dbo.$table_name', 'U') IS NOT NULL BEGIN
-                    DROP TABLE dbo.$table_name;
+        $table_name = 'dbo.' . $table_name;
+        return "IF OBJECT_ID('$table_name', 'U') IS NOT NULL BEGIN
+                    DROP TABLE $table_name;
                 END;
-                CREATE TABLE dbo.$table_name (
-                    name          NVARCHAR(200)      NOT NULL  PRIMARY KEY,
-                    update_time   INT            DEFAULT NULL
+                CREATE TABLE $table_name (
+                    name            VARCHAR(80)         NOT NULL  PRIMARY KEY,
+                    update_time     INT             DEFAULT NULL
                 );";
     }
 }
