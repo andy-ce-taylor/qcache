@@ -1,6 +1,6 @@
 # Change Log
 
-### 1.1.
+### 1.1.8
 - Fixed up the MSSQL.
 - Temporarily commented-out logging.
 - Increased resultset size cut-off point for deciding to cache to DB or file.
