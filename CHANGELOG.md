@@ -1,6 +1,7 @@
 # Change Log
 
 ### 1.1.
+- Temporarily commented-out logging.
 - Increased resultset size cut-off point for deciding to cache to DB or file.
 
 ### 1.1.7

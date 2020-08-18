@@ -77,6 +77,8 @@ class QCache extends QCacheUtils
         if (!$this->qcache_enabled)
             return false;
 
+$_LOG_TO_DB = false;
+
         $start_nanosecs = hrtime(true);
         $time_now = time();
 
@@ -106,7 +108,8 @@ class QCache extends QCacheUtils
             [$access_time, $script, $av_nanosecs, $impressions, $description, $tables_csv, $resultset] = $cached_data;
 
             // check whether cache is stale (tables have changed since last access time)
-            if ($this->ext_db_connection->haveTablesChanged($access_time, explode(',', $tables_csv), $this->loc_db_connection)) {
+            if ($this->ext_db_connection->findTableChanges($access_time, explode(',', $tables_csv), $this->loc_db_connection)) {
+
                 // perform a fresh query and update cache
                 $start_nanosecs = hrtime(true); // restart nanosecond timer
                 $resultset = new SqlResultSet($this->ext_db_connection->read($sql));
@@ -120,50 +123,53 @@ class QCache extends QCacheUtils
                 if (strlen($resultset_esc) <= Constants::MAX_DB_RESULTSET_SIZE) { // save to db
 
                     $this->loc_db_connection->write(
-                        "UPDATE $this->table_qc_cache " .
-                            "SET access_time=$access_time," .
-                                "av_nanosecs=$av_nanosecs," .
-                                "impressions=$impressions," .
-                                "resultset=$resultset_esc " .
+                        "UPDATE $this->table_qc_cache ".
+                        "SET access_time=$access_time,".
+                        "av_nanosecs=$av_nanosecs,".
+                        "impressions=$impressions,".
+                        "resultset=$resultset_esc ".
                         "WHERE hash='$hash'"
                     );
 
                     // if the same cache file exists, delete it
-                    if (!$from_db && file_exists($cache_file))
+                    if (!$from_db && file_exists($cache_file)) {
                         unlink($cache_file);
-                }
-
-                else { // save to file
+                    }
+                } else { // save to file
                     JsonEncodedFileIO::write(
                         $cache_file,
-                        serialize([$access_time, $script, $av_nanosecs, $impressions, $description, $tables_csv, $resultset])
+                        serialize(
+                            [$access_time, $script, $av_nanosecs, $impressions, $description, $tables_csv, $resultset]
+                        )
                     );
 
                     // if the same db record exists, delete it
-                    if ($from_db)
+                    if ($from_db) {
                         $this->loc_db_connection->write("DELETE FROM $this->table_qc_cache WHERE hash='$hash'");
+                    }
                 }
 
-if (false) {
-                // log it
-                $this->loc_db_connection->write(
-                    "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) ".
-                    "VALUES ($time_now, 'db', $elapsed_nanosecs, '$hash')"
-                );
-}
+                if ($_LOG_TO_DB) {
+                    // log it
+                    $this->loc_db_connection->write(
+                        "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) ".
+                        "VALUES ($time_now, 'db', $elapsed_nanosecs, '$hash')"
+                    );
+                }
+
                 return $resultset;
             }
 
             // Cache is fresh - return a quick result from cache
             $elapsed_nanosecs = hrtime(true) - $start_nanosecs;
 
-if (false) {
-            // log it
-            $this->loc_db_connection->write(
-                "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) ".
-                "VALUES ($time_now, 'qc', $elapsed_nanosecs, '$hash')"
-            );
-}
+            if ($_LOG_TO_DB) {
+                // log it
+                $this->loc_db_connection->write(
+                    "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) ".
+                    "VALUES ($time_now, 'qc', $elapsed_nanosecs, '$hash')"
+                );
+            }
 
             return $resultset;
         }
@@ -196,7 +202,7 @@ if (false) {
         else // save to file
             JsonEncodedFileIO::write($cache_file, serialize([$time_now, $sql, $elapsed_nanosecs, 1, $description, $tables_csv, $resultset]));
 
-if (false) {
+if ($_LOG_TO_DB) {
             // log it
             $this->loc_db_connection->write(
                 "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) ".
@@ -223,8 +229,7 @@ if (false) {
                 return new DbConnectorMSSQL($conn_data['host'], $conn_data['user'], $conn_data['pass'], $conn_data['name'], $module_id);
         }
 
-        // whoops! unsupported database type
-        return null;
+        throw new QCacheConnectionException("Unsupported database type - \"{$conn_data['type']}\"");
     }
 
     /**
