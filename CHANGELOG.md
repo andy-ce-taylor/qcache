@@ -1,5 +1,8 @@
 # Change Log
 
+### 1.1.
+- DB type/host/name signature added to hash.
+
 ### 1.1.6
 - Use of two connections - one for reading target data and the other for caching/logging.
 

@@ -17,6 +17,9 @@ class QCache extends QCacheUtils
     private $qcache_folder;
 
     /** @var string */
+    private $ext_conn_sig;
+
+    /** @var string */
     private $table_qc_cache;
 
     /** @var string */
@@ -47,6 +50,8 @@ class QCache extends QCacheUtils
         if (!$ext_conn_data)
             $ext_conn_data = $loc_conn_data;
 
+        $this->ext_conn_sig = "{$ext_conn_data['type']}:{$ext_conn_data['host']}:{$ext_conn_data['name']}";
+
         $this->loc_db_connection = self::getConnection($loc_conn_data, $module_id);
         $this->ext_db_connection = self::getConnection($ext_conn_data, $module_id);
 
@@ -75,7 +80,7 @@ class QCache extends QCacheUtils
         $start_nanosecs = hrtime(true);
         $time_now = time();
 
-        $hash = hash('md5', $sql = trim($sql));
+        $hash = hash('md5', $this->ext_conn_sig . ($sql = trim($sql)));
 
         $columns = 'access_time, script, av_nanosecs, impressions, description, tables_csv, resultset';
         $sql_get_cache = "SELECT $columns FROM $this->table_qc_cache WHERE hash='$hash'";
