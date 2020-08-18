@@ -1,5 +1,8 @@
 # Change Log
 
+### 1.1.
+- Increased resultset size cut-off point for deciding to cache to DB or file.
+
 ### 1.1.7
 - Disabled logging for now - it isn't utilised in the code yet. 
 - DB type/host/name signature added to hash.
