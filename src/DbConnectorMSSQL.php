@@ -17,7 +17,7 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
     protected $db_name;
 
     /** @var string */
-    private $table_qc_table_update_times;
+    private $updates_table;
 
     /**
      * DbConnectorMSSQL constructor.
@@ -46,7 +46,7 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
         if ($module_id)
             $module_id .= '_';
 
-        $this->table_qc_table_update_times = 'qc_' . $module_id . 'table_times';
+        $this->updates_table = 'qc_' . $module_id . 'table_update_times';
 
         $this->db_name = $database_name;
     }
@@ -138,7 +138,7 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
     }
 
     /**
-     * Process a SELECT for a single columns and return as an array.
+     * Process a SELECT for a single column and return as an array.
      * @param string $sql
      * @return array
      */
@@ -188,11 +188,10 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
     {
         $specific_tables = $tables ? "AND OBJECT_ID IN (OBJECT_ID('".implode("'),OBJECT_ID('", $tables)."'))" : '';
 
-        // typical timestamp value: 2019-02-05 12:07:08.345
-        $sql_query = "
-            SELECT OBJECT_NAME(OBJECT_ID) AS TableName, last_user_update
-            FROM sys.dm_db_index_usage_stats
-            WHERE database_id = DB_ID('$this->db_name') $specific_tables";
+        $sql_query =
+            "SELECT OBJECT_NAME(OBJECT_ID) AS TableName, last_user_update
+             FROM sys.dm_db_index_usage_stats
+             WHERE database_id = DB_ID('$this->db_name') $specific_tables";
 
         if (($stmt1 = sqlsrv_query($this->conn, $sql_query)) == false)
             return false;
@@ -205,31 +204,42 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
 
             $table_name = $row['TableName'];
 
-            if ($update_time = $row['last_user_update'])
+            if ($update_time = $row['last_user_update']) // typical mssql timestamp value: 2019-02-05 12:34:56.789
                 $timestamp = (int)(new DateTime(date_format($update_time, 'Y-m-d H:i:s')))->format('U'); // use the updated time
 
             else { // sys.dm_db_index_usage_stats hasn't been updated since SQL Server was started
 
-                // check whether update_time has been cached
-                $sql = "SELECT update_time FROM $this->table_qc_table_update_times WHERE name='$table_name'";
+                // check whether update_time has previously been cached
+                $sql = "SELECT update_time FROM $this->updates_table WHERE name='$table_name'";
 
                 $timestamp = 0;
 
-                if ($stmt2 = sqlsrv_query($loc_db, $sql)) {
-                    if ($row = sqlsrv_fetch_array($stmt2, SQLSRV_FETCH_ASSOC)) {
+                if ($stmt2 = sqlsrv_query($loc_db->conn, $sql)) {
+                    if ($row = sqlsrv_fetch_array($stmt2, SQLSRV_FETCH_ASSOC))
                         // get the cached update_time
                         $timestamp = $row['update_time'];
-                    }
+
                     sqlsrv_free_stmt($stmt2);
                 }
 
-                if (!$timestamp) {
+                if (!$timestamp)
                     // set update_time to the current time and store it in the table_update_times cache
                     $timestamp = $current_timestamp;
-                    $sql = "INSERT INTO $this->table_qc_table_update_times (name, update_time) VALUES('$table_name', $timestamp)";
-                }
-                return (bool)sqlsrv_query($loc_db, $sql);
             }
+
+            // upsert
+            sqlsrv_query($loc_db->conn,
+                "BEGIN TRAN
+                     UPDATE $this->updates_table WITH (SERIALIZABLE)
+                     SET update_time = $timestamp
+                     WHERE name = '$table_name'
+                     IF @@rowcount = 0
+                     BEGIN
+                         INSERT $this->updates_table (name, update_time)
+                         VALUES ('$table_name', $timestamp)
+                     END
+                 COMMIT TRAN"
+            );
 
             $data[$table_name] = $timestamp;
         }
@@ -386,8 +396,7 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
     public function getColumnNames($table)
     {
         return $this->readCol(
-            "USE [{$this->db_name}]
-             SELECT COLUMN_NAME,* 
+            "SELECT COLUMN_NAME, * 
              FROM INFORMATION_SCHEMA.COLUMNS
              WHERE TABLE_NAME = '$table' AND TABLE_SCHEMA='dbo'"
         );

@@ -15,7 +15,7 @@ abstract class DbChangeDetection
      * @param mixed     $loc_db
      * @return bool
      */
-    public function haveTablesChanged($since, $table_names, $loc_db)
+    public function findTableChanges($since, $table_names, $loc_db)
     {
         if (($table_change_times = $this->getTableChangeTimes($table_names, $loc_db)) === false) {
             // information isn't available or query failed
@@ -80,6 +80,7 @@ abstract class DbChangeDetection
 
             // add the db time offset to each table change time
             $time_offset = $this->getDbTimeOffset();
+
             foreach ($table_times_l1c as &$t)
                 $t += $time_offset;
         }

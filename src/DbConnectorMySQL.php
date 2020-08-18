@@ -19,6 +19,9 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
     /** @var string */
     protected $db_name;
 
+    /** @var string */
+    private $updates_table;
+
     /**
      * DbConnectorMySQL constructor.
      *
@@ -35,6 +38,11 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
 
         if ($this->conn->connect_errno)
             throw new QCacheConnectionException("MySQL connection error: " . $this->conn->connect_errno);
+
+        if ($module_id)
+            $module_id .= '_';
+
+        $this->updates_table = 'qc_' . $module_id . 'table_update_times';
 
         $this->db_name = $database_name;
     }
@@ -143,7 +151,7 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
     }
 
     /**
-     * Process a SELECT for a single columns and return as an array.
+     * Process a SELECT for a single column and return as an array.
      * @param string $sql
      * @return array
      */
@@ -189,11 +197,10 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
     {
         $specific_tables = $tables ? "AND TABLE_NAME IN ('" . implode("','", $tables) . "')" : '';
 
-        // typical timestamp value: 2020-05-24 12:01:23
-        $sql_query = "
-            SELECT SQL_NO_CACHE TABLE_NAME, UPDATE_TIME
-            FROM information_schema.tables
-            WHERE TABLE_SCHEMA = '$this->db_name' $specific_tables";
+        $sql_query =
+            "SELECT SQL_NO_CACHE TABLE_NAME, UPDATE_TIME
+             FROM information_schema.tables
+             WHERE TABLE_SCHEMA = '$this->db_name' $specific_tables";
 
         if (!($res = $this->conn->query($sql_query)))
             return false; // permissions problem?
@@ -201,20 +208,16 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
         $data = [];
 
         while ($row = $res->fetch_assoc()) {
-            try {
-                $update_time = (int)(new DateTime($row['UPDATE_TIME']))->format('U');
-            } catch (Exception $ex) {
-                $res->free_result();
-                return false; // wrong time format
-            }
+            // typical mysql timestamp value: 2020-05-24 12:34:56
+            $update_time = (int)(new DateTime($row['UPDATE_TIME']))->format('U');
 
             $table_name = $row['TABLE_NAME'];
             $data[$table_name] = $update_time;
 
-//          $loc_db->query(
-//              "INSERT INTO $this->table_qc_table_update_times (name, update_time) VALUES('$table_name', $update_time) " .
-//              "ON DUPLICATE KEY UPDATE name='$table_name', update_time=$update_time"
-//          );
+            $loc_db->conn->query(
+                "INSERT INTO $this->updates_table (name, update_time) VALUES('$table_name', $update_time) " .
+                "ON DUPLICATE KEY UPDATE name='$table_name', update_time=$update_time"
+            );
         }
 
         $res->free_result();
