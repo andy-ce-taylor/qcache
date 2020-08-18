@@ -144,22 +144,26 @@ class QCache extends QCacheUtils
                         $this->loc_db_connection->write("DELETE FROM $this->table_qc_cache WHERE hash='$hash'");
                 }
 
+if (false) {
                 // log it
                 $this->loc_db_connection->write(
                     "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) ".
                     "VALUES ($time_now, 'db', $elapsed_nanosecs, '$hash')"
                 );
-
+}
                 return $resultset;
             }
 
             // Cache is fresh - return a quick result from cache
             $elapsed_nanosecs = hrtime(true) - $start_nanosecs;
 
+if (false) {
+            // log it
             $this->loc_db_connection->write(
-                "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) " .
+                "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) ".
                 "VALUES ($time_now, 'qc', $elapsed_nanosecs, '$hash')"
             );
+}
 
             return $resultset;
         }
@@ -192,10 +196,13 @@ class QCache extends QCacheUtils
         else // save to file
             JsonEncodedFileIO::write($cache_file, serialize([$time_now, $sql, $elapsed_nanosecs, 1, $description, $tables_csv, $resultset]));
 
-        $this->loc_db_connection->write(
-            "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) " .
-            "VALUES ($time_now, 'db', $elapsed_nanosecs, '$hash')"
-        );
+if (false) {
+            // log it
+            $this->loc_db_connection->write(
+                "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) ".
+                "VALUES ($time_now, 'db', $elapsed_nanosecs, '$hash')"
+            );
+}
 
         return $resultset;
     }

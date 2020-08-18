@@ -1,6 +1,7 @@
 # Change Log
 
-### 1.1.
+### 1.1.7
+- Disabled logging for now - it isn't utilised in the code yet. 
 - DB type/host/name signature added to hash.
 
 ### 1.1.6
