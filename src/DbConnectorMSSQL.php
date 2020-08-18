@@ -7,17 +7,14 @@
 namespace acet\qcache;
 
 use DateTime;
-use Exception;
 
 class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
 {
-    const MSSQL_TABLES_INFO_FILE_NAME = 'mssql_tables_info.json';
-
     /** @var resource */
     private $conn;
 
     /** @var string */
-    private $database_name;
+    protected $db_name;
 
     /** @var string */
     private $table_qc_table_update_times;
@@ -46,12 +43,12 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
         if (!$this->conn)
             throw new QCacheConnectionException("MSSQL connection error");
 
-        $this->database_name = $database_name;
-
         if ($module_id)
             $module_id .= '_';
 
-        $this->table_qc_table_update_times = 'dbo.qc_' . $module_id . 'table_update_times';
+        $this->table_qc_table_update_times = 'qc_' . $module_id . 'table_times';
+
+        $this->db_name = $database_name;
     }
 
     /**
@@ -141,6 +138,22 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
     }
 
     /**
+     * Process a SELECT for a single columns and return as an array.
+     * @param string $sql
+     * @return array
+     */
+    public function readCol($sql)
+    {
+        $data = [];
+
+        if ($result = sqlsrv_query($this->conn, $sql))
+            while ($row = sqlsrv_fetch_array($result, SQLSRV_FETCH_NUMERIC))
+                $data[] = $row[0];
+
+        return $data;
+    }
+
+    /**
      * Process a table write request, such as INSERT or UPDATE.
      * @param string $sql
      * @return bool
@@ -167,10 +180,11 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
      * equivalent MySQL method, this table gets reset whenever MSSQL restarts. For this
      * reason, a file is used to maintain the latest table change times.
      *
+     * @param mixed          $loc_db
      * @param string[]|null  $tables
      * @return int[]|false
      */
-    public function getTableTimes($tables=null)
+    public function getTableTimes($loc_db, $tables=null)
     {
         $specific_tables = $tables ? "AND OBJECT_ID IN (OBJECT_ID('".implode("'),OBJECT_ID('", $tables)."'))" : '';
 
@@ -178,7 +192,7 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
         $sql_query = "
             SELECT OBJECT_NAME(OBJECT_ID) AS TableName, last_user_update
             FROM sys.dm_db_index_usage_stats
-            WHERE database_id = DB_ID('$this->database_name') $specific_tables";
+            WHERE database_id = DB_ID('$this->db_name') $specific_tables";
 
         if (($stmt1 = sqlsrv_query($this->conn, $sql_query)) == false)
             return false;
@@ -199,17 +213,22 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
                 // check whether update_time has been cached
                 $sql = "SELECT update_time FROM $this->table_qc_table_update_times WHERE name='$table_name'";
 
-                if (($stmt2 = sqlsrv_query($this->conn, $sql)) && ($row = sqlsrv_fetch_array($stmt2, SQLSRV_FETCH_ASSOC))) {
-                    // get the cached update_time
-                    $timestamp = $row['update_time'];
+                $timestamp = 0;
+
+                if ($stmt2 = sqlsrv_query($loc_db, $sql)) {
+                    if ($row = sqlsrv_fetch_array($stmt2, SQLSRV_FETCH_ASSOC)) {
+                        // get the cached update_time
+                        $timestamp = $row['update_time'];
+                    }
                     sqlsrv_free_stmt($stmt2);
                 }
-                else {
+
+                if (!$timestamp) {
                     // set update_time to the current time and store it in the table_update_times cache
                     $timestamp = $current_timestamp;
                     $sql = "INSERT INTO $this->table_qc_table_update_times (name, update_time) VALUES('$table_name', $timestamp)";
                 }
-                $this->write($sql);
+                return (bool)sqlsrv_query($loc_db, $sql);
             }
 
             $data[$table_name] = $timestamp;
@@ -225,7 +244,7 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
      *
      * @return string
      */
-    public function getSQLServerStartTime()
+    private function getSQLServerStartTime()
     {
         $sql = "SELECT sqlserver_start_time FROM sys.dm_os_sys_info";
 
@@ -318,5 +337,59 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
                     name            VARCHAR(80)         NOT NULL  PRIMARY KEY,
                     update_time     INT             DEFAULT NULL
                 );";
+    }
+
+    /**
+     * Returns the primary keys for the given table.
+     * @return string[]
+     */
+    public function getPrimary($table)
+    {
+        $sql = "SELECT KU.table_name as TABLENAME, column_name as PRIMARYKEYCOLUMN
+                FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS TC 
+                INNER JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS KU
+                    ON TC.CONSTRAINT_TYPE = 'PRIMARY KEY' 
+                    AND TC.CONSTRAINT_NAME = KU.CONSTRAINT_NAME 
+                    AND KU.table_name='$table'
+                ORDER BY KU.TABLE_NAME, KU.ORDINAL_POSITION";
+
+        $data = [];
+
+        if ($result = sqlsrv_query($this->conn, $sql))
+            while ($row = sqlsrv_fetch_array($result, SQLSRV_FETCH_ASSOC))
+                $data[] = $row['column_name'];
+
+        return $data;
+    }
+
+
+    /**
+     * Returns the names of all external tables.
+     * @return string[]
+     */
+    public function getTableNames()
+    {
+        static $table_names = [];
+
+        if (!isset($table_names[$this->db_name])) {
+            $sql = "SELECT table_name FROM information_schema.tables WHERE TABLE_CATALOG LIKE '{$this->db_name}'";
+            $table_names[$this->db_name] = $this->readCol($sql);
+        }
+
+        return $table_names[$this->db_name];
+    }
+
+    /**
+     * Returns the names of all columns in the given external table.
+     * @return string[]
+     */
+    public function getColumnNames($table)
+    {
+        return $this->readCol(
+            "USE [{$this->db_name}]
+             SELECT COLUMN_NAME,* 
+             FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_NAME = '$table' AND TABLE_SCHEMA='dbo'"
+        );
     }
 }

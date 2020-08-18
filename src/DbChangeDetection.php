@@ -12,12 +12,12 @@ abstract class DbChangeDetection
      *
      * @param int       $since        - unix time to test against
      * @param string[]  $table_names  - the names of tables to check (optional)
-     *
+     * @param mixed     $loc_db
      * @return bool
      */
-    public function haveTablesChanged($since, $table_names=[])
+    public function haveTablesChanged($since, $table_names, $loc_db)
     {
-        if (($table_change_times = $this->getTableChangeTimes($table_names)) === false) {
+        if (($table_change_times = $this->getTableChangeTimes($table_names, $loc_db)) === false) {
             // information isn't available or query failed
             return true;
         }
@@ -40,14 +40,15 @@ abstract class DbChangeDetection
      * the information isn't available or the query fails.
      *
      * @param int       $since        - unix time to test against
-     * @param string[]  $table_names  - the names of tables to check (optional)
+     * @param string[]  $table_names  - the names of tables to check
+     * @param mixed     $loc_db
      *
      * @return string[]
      */
-    public function getChangedTables($since, $table_names=null)
+    public function getChangedTables($since, $table_names, $loc_db)
     {
         // can it be assumed that all tables have changed?
-        if (($table_change_times = $this->getTableChangeTimes($table_names)) === false)
+        if (($table_change_times = $this->getTableChangeTimes($table_names, $loc_db)) === false)
             return $table_names;
 
         $changed_tables = [];
@@ -65,15 +66,16 @@ abstract class DbChangeDetection
      * Returns FALSE if the information isn't available.
      *
      * @param string[]  $table_names  - the names of tables to check
+     * @param mixed     $loc_db
      *
      * @return int[]|false
      */
-    public function getTableChangeTimes($table_names)
+    public function getTableChangeTimes($table_names, $loc_db)
     {
         static $table_times_l1c;
 
         if (!$table_times_l1c) {
-            if (($table_times_l1c = $this->getTableTimes()) === false)
+            if (($table_times_l1c = $this->getTableTimes($loc_db)) === false)
                 return false;
 
             // add the db time offset to each table change time

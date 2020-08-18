@@ -113,26 +113,22 @@ class QCacheUtils
     /**
      * Removes cache records.
      *
-     * @param string  $db_type
-     * @param string  $db_host
-     * @param string  $db_user
-     * @param string  $db_pass
-     * @param string  $db_name
+     * @param array   $conn_data
      * @param string  $qcache_folder
      * @param string  $module_id
      */
-    public function clearCache($db_type, $db_host, $db_user, $db_pass, $db_name, $qcache_folder, $module_id='')
+    public function clearCache($conn_data, $qcache_folder, $module_id='')
     {
-        $conn = QCache::getConnection($db_type, $db_host, $db_user, $db_pass, $db_name, $module_id);
+        $conn = QCache::getConnection($conn_data, $module_id);
 
         if ($module_id)
             $module_id .= '_';
 
         $table_qc_cache = 'qc_' . $module_id . 'cache';
-//      $table_qc_logs  = 'qc_' . $module_id . 'logs';
+        $table_qc_logs  = 'qc_' . $module_id . 'logs';
 
         $conn->write("TRUNCATE TABLE $table_qc_cache");
-//      $conn->write("TRUNCATE TABLE $table_qc_logs");
+        $conn->write("TRUNCATE TABLE $table_qc_logs");
 
         // delete cache files
         self::rmdir_plus($qcache_folder, false);
@@ -142,24 +138,25 @@ class QCacheUtils
      * Rebuild Qcache database tables if the Qcache version (according to the CHANGELOG) has
      * been updated or the tables are missing.
      *
-     * @param string  $db_type
-     * @param string  $db_host
-     * @param string  $db_user
-     * @param string  $db_pass
-     * @param string  $db_name
+     * @param array   $conn_data
      * @param string  $qcache_folder
      * @param string  $module_id
      */
-    public function verifyQCacheTables($db_type, $db_host, $db_user, $db_pass, $db_name, $qcache_folder, $module_id='')
+    public function verifyQCacheTables($conn_data, $qcache_folder='', $module_id='')
     {
         $schema_changed = self::detectSchemaChange();
 
         if ($schema_changed) {
             // delete cache files
+            if (!$qcache_folder)
+                $qcache_folder = sys_get_temp_dir();
+
             self::rmdir_plus($qcache_folder, false);
         }
 
-        $conn = QCache::getConnection($db_type, $db_host, $db_user, $db_pass, $db_name, $module_id);
+        $conn = QCache::getConnection($conn_data, $module_id);
+
+        $db_name = $conn_data['name'];
 
         if ($module_id)
             $module_id .= '_';

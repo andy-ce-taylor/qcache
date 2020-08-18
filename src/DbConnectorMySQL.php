@@ -17,7 +17,7 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
     protected $conn;
 
     /** @var string */
-    protected $database_name;
+    protected $db_name;
 
     /**
      * DbConnectorMySQL constructor.
@@ -29,19 +29,14 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
      * @param string  $module_id
      * @throws QCacheConnectionException
      */
-    function __construct($host, $user, $pass, $database_name, $module_id)
+    function __construct($host, $user, $pass, $database_name, $module_id='')
     {
         $this->conn = new mysqli($host, $user, $pass, $database_name);
 
         if ($this->conn->connect_errno)
             throw new QCacheConnectionException("MySQL connection error: " . $this->conn->connect_errno);
 
-        $this->database_name = $database_name;
-
-        if ($module_id)
-            $module_id .= '_';
-
-        $this->table_qc_table_times = 'qc_' . $module_id . 'table_times';
+        $this->db_name = $database_name;
     }
 
     /**
@@ -132,6 +127,38 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
     }
 
     /**
+     * Process a SELECT for a single columns and return as an array.
+     * @param string $sql
+     * @return array
+     */
+    public function readCol($sql)
+    {
+        $data = [];
+
+        if ($result = $this->conn->query($sql))
+            while ($row = $result->fetch_array(MYSQLI_NUM))
+                $data[] = $row[0];
+
+        return $data;
+    }
+
+    /**
+     * Process a SELECT for a single columns and return as an array.
+     * @param string $sql
+     * @return array
+     */
+    public function showCreateTable($sql)
+    {
+        $data = [];
+
+        if ($result = $this->conn->query($sql))
+            while ($row = $result->fetch_array(MYSQLI_NUM))
+                $data[] = $row[0];
+
+        return $data;
+    }
+
+    /**
      * Process a table write request, such as INSERT or UPDATE.
      * @param string $sql
      * @return bool
@@ -154,10 +181,11 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
     /**
      * Returns the change times for the given tables.
      *
+     * @param mixed          $loc_db
      * @param string[]|null  $tables
      * @return int[]|false
      */
-    public function getTableTimes($tables=null)
+    public function getTableTimes($loc_db, $tables=null)
     {
         $specific_tables = $tables ? "AND TABLE_NAME IN ('" . implode("','", $tables) . "')" : '';
 
@@ -165,7 +193,7 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
         $sql_query = "
             SELECT SQL_NO_CACHE TABLE_NAME, UPDATE_TIME
             FROM information_schema.tables
-            WHERE TABLE_SCHEMA = '$this->database_name' $specific_tables";
+            WHERE TABLE_SCHEMA = '$this->db_name' $specific_tables";
 
         if (!($res = $this->conn->query($sql_query)))
             return false; // permissions problem?
@@ -183,8 +211,8 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
             $table_name = $row['TABLE_NAME'];
             $data[$table_name] = $update_time;
 
-//          $this->conn->query(
-//              "INSERT INTO $this->table_qc_table_times (name, update_time) VALUES('$table_name', $update_time) " .
+//          $loc_db->query(
+//              "INSERT INTO $this->table_qc_table_update_times (name, update_time) VALUES('$table_name', $update_time) " .
 //              "ON DUPLICATE KEY UPDATE name='$table_name', update_time=$update_time"
 //          );
         }
@@ -257,5 +285,53 @@ class DbConnectorMySQL extends DbChangeDetection implements DbConnectorInterface
                     name            VARCHAR(80)         NOT NULL PRIMARY KEY DEFAULT ' ',
                     update_time     INT(11)         DEFAULT NULL
                 );";
+    }
+
+    /**
+     * Returns the primary keys for the given table.
+     * @return string[]
+     */
+    public function getPrimary($table)
+    {
+        $sql = "SHOW KEYS FROM $table WHERE Key_name = 'PRIMARY'";
+
+        $data = [];
+
+        if ($result = $this->conn->query($sql))
+            while ($row = $result->fetch_assoc())
+                $data[] = $row['Column_name'];
+
+        return $data;
+    }
+
+
+    /**
+     * Returns the names of all external tables.
+     * @return string[]
+     */
+    public function getTableNames()
+    {
+        static $table_names = [];
+
+        if (!isset($table_names[$this->db_name])) {
+            $sql = "SELECT table_name FROM information_schema.tables WHERE TABLE_SCHEMA LIKE '{$this->db_name}'";
+            $table_names[$this->db_name] = $this->readCol($sql);
+        }
+
+        return $table_names[$this->db_name];
+    }
+
+    /**
+     * Returns the names of all columns in the given external table.
+     * @return string[]
+     */
+    public function getColumnNames($table)
+    {
+        return $this->readCol(
+            "SELECT `COLUMN_NAME` 
+             FROM `INFORMATION_SCHEMA`.`COLUMNS` 
+             WHERE `TABLE_SCHEMA`='{$this->db_name}'
+             AND `TABLE_NAME`='$table'"
+        );
     }
 }

@@ -1,6 +1,8 @@
 <?php
 namespace acet\qcache;
 
+use Exception;
+
 interface DbConnectorInterface
 {
     /**
@@ -90,4 +92,22 @@ interface DbConnectorInterface
      * @return string
      */
     public function getCreateTableSQL_table_update_times($table_name);
+
+    /**
+     * Returns the primary keys for the given table.
+     * @return string[]
+     */
+    public function getPrimary($table);
+
+    /**
+     * Returns the names of all external tables.
+     * @return string[]
+     */
+    public function getTableNames();
+
+    /**
+     * Returns the names of all columns in the given external table.
+     * @return string[]
+     */
+    public function getColumnNames($table);
 }

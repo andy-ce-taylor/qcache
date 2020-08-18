@@ -1,5 +1,8 @@
 # Change Log
 
+### 1.1.6
+- Use of two connections - one for reading target data and the other for caching/logging.
+
 ### 1.1.5
 - Fixed MSSQL table update error.
 

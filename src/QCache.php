@@ -23,31 +23,37 @@ class QCache extends QCacheUtils
     private $table_qc_logs;
 
     /** @var mixed */
-    private $db_connection;
+    private $loc_db_connection;
+
+    /** @var mixed */
+    private $ext_db_connection;
 
     /**
-     * @param string  $db_type
-     * @param string  $db_host
-     * @param string  $db_user
-     * @param string  $db_pass
-     * @param string  $db_name
-     * @param string  $qcache_folder
-     * @param bool    $qcache_enabled
-     * @param string  $module_id
+     * @param string[]  $loc_conn_data
+     * @param string[]  $ext_conn_data
+     * @param string    $qcache_folder
+     * @param bool      $qcache_enabled
+     * @param string    $module_id
      * @throws QCacheConnectionException
      */
-    function __construct($db_type, $db_host, $db_user, $db_pass, $db_name, $qcache_folder, $qcache_enabled=true, $module_id='') {
-        if (!$db_type || !$db_host || !$db_user || !$db_pass || !$db_name)
-            throw new QCacheConnectionException("Missing database connection details");
+    function __construct($loc_conn_data, $ext_conn_data=null, $qcache_folder='', $qcache_enabled=true, $module_id='') {
+
+        if (!$qcache_folder)
+            $qcache_folder = sys_get_temp_dir();
 
         $this->qcache_folder = $qcache_folder;
         $this->qcache_enabled = $qcache_enabled;
-        $this->db_connection = self::getConnection($db_type, $db_host, $db_user, $db_pass, $db_name, $module_id);
 
-        $schema_prefix = strtolower($db_type) == 'mssql' ? 'dbo.' : '';
+        if (!$ext_conn_data)
+            $ext_conn_data = $loc_conn_data;
+
+        $this->loc_db_connection = self::getConnection($loc_conn_data, $module_id);
+        $this->ext_db_connection = self::getConnection($ext_conn_data, $module_id);
 
         if ($module_id)
             $module_id .= '_';
+
+        $schema_prefix = strtolower($loc_conn_data['type']) == 'mssql' ? 'dbo.' : '';
 
         $this->table_qc_cache = "{$schema_prefix}qc_{$module_id}cache";
         $this->table_qc_logs  = "{$schema_prefix}qc_{$module_id}logs";
@@ -76,7 +82,7 @@ class QCache extends QCacheUtils
 
         $cache_file = $this->qcache_folder.DIRECTORY_SEPARATOR."#$hash.json";
 
-        if ($data = $this->db_connection->read($sql_get_cache)) { // from database
+        if ($data = $this->ext_db_connection->read($sql_get_cache)) { // from database
             $data[0]['resultset'] = unserialize($data[0]['resultset']);
             $cached_data = array_values($data[0]);
             $from_db = true;
@@ -95,20 +101,20 @@ class QCache extends QCacheUtils
             [$access_time, $script, $av_nanosecs, $impressions, $description, $tables_csv, $resultset] = $cached_data;
 
             // check whether cache is stale (tables have changed since last access time)
-            if ($this->db_connection->haveTablesChanged($access_time, explode(',', $tables_csv))) {
+            if ($this->ext_db_connection->haveTablesChanged($access_time, explode(',', $tables_csv), $this->loc_db_connection)) {
                 // perform a fresh query and update cache
                 $start_nanosecs = hrtime(true); // restart nanosecond timer
-                $resultset = new SqlResultSet($this->db_connection->read($sql));
+                $resultset = new SqlResultSet($this->ext_db_connection->read($sql));
                 $elapsed_nanosecs = hrtime(true) - $start_nanosecs;
 
                 $av_nanosecs = (float)($elapsed_nanosecs + $av_nanosecs * $impressions++) / $impressions;
 
-                $resultset_esc = $this->db_connection->escapeBinData(serialize($resultset));
+                $resultset_esc = $this->loc_db_connection->escapeBinData(serialize($resultset));
 
-                // decide whether to save to db (faster) or file
+                // decide whether to cache to db (faster) or file
                 if (strlen($resultset_esc) <= Constants::MAX_DB_RESULTSET_SIZE) { // save to db
 
-                    $this->db_connection->write(
+                    $this->loc_db_connection->write(
                         "UPDATE $this->table_qc_cache " .
                             "SET access_time=$access_time," .
                                 "av_nanosecs=$av_nanosecs," .
@@ -123,15 +129,18 @@ class QCache extends QCacheUtils
                 }
 
                 else { // save to file
-                    JsonEncodedFileIO::write($cache_file, serialize([$access_time, $script, $av_nanosecs, $impressions, $description, $tables_csv, $resultset]));
+                    JsonEncodedFileIO::write(
+                        $cache_file,
+                        serialize([$access_time, $script, $av_nanosecs, $impressions, $description, $tables_csv, $resultset])
+                    );
 
                     // if the same db record exists, delete it
                     if ($from_db)
-                        $this->db_connection->write("DELETE FROM $this->table_qc_cache WHERE hash='$hash'");
+                        $this->loc_db_connection->write("DELETE FROM $this->table_qc_cache WHERE hash='$hash'");
                 }
 
                 // log it
-                $this->db_connection->write(
+                $this->loc_db_connection->write(
                     "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) ".
                     "VALUES ($time_now, 'db', $elapsed_nanosecs, '$hash')"
                 );
@@ -142,7 +151,7 @@ class QCache extends QCacheUtils
             // Cache is fresh - return a quick result from cache
             $elapsed_nanosecs = hrtime(true) - $start_nanosecs;
 
-            $this->db_connection->write(
+            $this->loc_db_connection->write(
                 "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) " .
                 "VALUES ($time_now, 'qc', $elapsed_nanosecs, '$hash')"
             );
@@ -159,17 +168,17 @@ class QCache extends QCacheUtils
         $tables_csv = is_array($tables) ? implode(',', $tables) : $tables;
 
         $start_nanosecs = hrtime(true); // restart nanosecond timer
-        $resultset = new SqlResultSet($this->db_connection->read($sql));
+        $resultset = new SqlResultSet($this->ext_db_connection->read($sql));
         $elapsed_nanosecs = hrtime(true) - $start_nanosecs;
 
-        $resultset_esc = $this->db_connection->escapeBinData(serialize($resultset));
+        $resultset_esc = $this->loc_db_connection->escapeBinData(serialize($resultset));
 
         // decide whether to save to db (faster) or file
         if (strlen($resultset_esc) <= Constants::MAX_DB_RESULTSET_SIZE) { // save to db
-            $description_esc = $this->db_connection->escapeBinData($description);
-            $script_esc = $this->db_connection->escapeBinData($sql);
+            $description_esc = $this->loc_db_connection->escapeBinData($description);
+            $script_esc = $this->loc_db_connection->escapeBinData($sql);
 
-            $this->db_connection->write(
+            $this->loc_db_connection->write(
                 "INSERT INTO $this->table_qc_cache (hash, access_time, script, av_nanosecs, impressions, description, tables_csv, resultset) ".
                 "VALUES ('$hash', $time_now, $script_esc, $elapsed_nanosecs, 1, $description_esc, '$tables_csv', $resultset_esc)"
             );
@@ -178,7 +187,7 @@ class QCache extends QCacheUtils
         else // save to file
             JsonEncodedFileIO::write($cache_file, serialize([$time_now, $sql, $elapsed_nanosecs, 1, $description, $tables_csv, $resultset]));
 
-        $this->db_connection->write(
+        $this->loc_db_connection->write(
             "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) " .
             "VALUES ($time_now, 'db', $elapsed_nanosecs, '$hash')"
         );
@@ -187,23 +196,19 @@ class QCache extends QCacheUtils
     }
 
     /**
-     * @param string  $db_type
-     * @param string  $db_host
-     * @param string  $db_user
-     * @param string  $db_pass
-     * @param string  $db_name
-     * @param string  $module_id
+     * @param string[]  $conn_data
+     * @param string    $module_id
      * @return DbConnectorMySQL|DbConnectorMSSQL
      * @throws QCacheConnectionException
      */
-    public static function getConnection($db_type, $db_host, $db_user, $db_pass, $db_name, $module_id='')
+    public static function getConnection($conn_data, $module_id='')
     {
-        switch ($db_type) {
+        switch ($conn_data['type']) {
             case 'mysql':
-                return new DbConnectorMySQL($db_host, $db_user, $db_pass, $db_name, $module_id);
+                return new DbConnectorMySQL($conn_data['host'], $conn_data['user'], $conn_data['pass'], $conn_data['name'], $module_id);
 
             case 'mssql':
-                return new DbConnectorMSSQL($db_host, $db_user, $db_pass, $db_name, $module_id);
+                return new DbConnectorMSSQL($conn_data['host'], $conn_data['user'], $conn_data['pass'], $conn_data['name'], $module_id);
         }
 
         // whoops! unsupported database type
@@ -213,8 +218,35 @@ class QCache extends QCacheUtils
     /**
      * @return DbConnectorMySQL|DbConnectorMSSQL
      */
-    public function getDbConnection()
+    public function getExtDbConnection()
     {
-        return $this->db_connection;
+        return $this->ext_db_connection;
+    }
+
+    /**
+     * Returns the names of all external tables.
+     * @return string[]
+     */
+    public function getExtDbTableNames()
+    {
+        return $this->ext_db_connection->getTableNames();
+    }
+
+    /**
+     * Returns the names of all columns in the given external table.
+     * @return string[]
+     */
+    public function getExtDbColumnNames($table)
+    {
+        return $this->ext_db_connection->getColumnNames($table);
+    }
+
+    /**
+     * @param $table
+     * @return string|string[]
+     */
+    public function getExtDbPrimary($table)
+    {
+        return $this->ext_db_connection->getPrimary($table);
     }
 }
