@@ -3,6 +3,6 @@ namespace acet\qcache;
 
 class Constants
 {
-    const SCHEMA_CHECKSUM_FILE  = 'schema_checksum.txt';
+    const FOLDER_SIG_FILE       = 'folder_signature.txt';
     const MAX_DB_RESULTSET_SIZE = 4000;
 }

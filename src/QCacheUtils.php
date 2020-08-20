@@ -144,14 +144,17 @@ class QCacheUtils
      */
     public function verifyQCacheTables($conn_data, $qcache_folder='', $module_id='')
     {
-        $schema_changed = self::detectSchemaChange();
+        if (!$qcache_folder)
+            $qcache_folder = sys_get_temp_dir();
 
-        if ($schema_changed) {
+        $folder_sig_file = $qcache_folder . DIRECTORY_SEPARATOR . Constants::FOLDER_SIG_FILE;
+
+        $folder_sig = self::detectQCacheFileChanges($folder_sig_file);
+
+        if ($folder_sig) {
             // delete cache files
-            if (!$qcache_folder)
-                $qcache_folder = sys_get_temp_dir();
-
             self::rmdir_plus($qcache_folder, false);
+            file_put_contents($folder_sig_file, $folder_sig);
         }
 
         $conn = QCache::getConnection($conn_data, $module_id);
@@ -166,15 +169,15 @@ class QCacheUtils
         $sql = '';
 
         $table_name = $prefix . "cache";
-        if ($schema_changed || !$conn->tableExists($db_name, $table_name))
+        if ($folder_sig || !$conn->tableExists($db_name, $table_name))
             $sql .= $conn->getCreateTableSQL_cache($table_name);
 
         $table_name = $prefix . "logs";
-        if ($schema_changed || !$conn->tableExists($db_name, $table_name))
+        if ($folder_sig || !$conn->tableExists($db_name, $table_name))
             $sql .= $conn->getCreateTableSQL_logs($table_name);
 
         $table_name = $prefix . "table_update_times";
-        if ($schema_changed || !$conn->tableExists($db_name, $table_name))
+        if ($folder_sig || !$conn->tableExists($db_name, $table_name))
             $sql .= $conn->getCreateTableSQL_table_update_times($table_name);
 
         if ($sql)
@@ -182,28 +185,50 @@ class QCacheUtils
     }
 
     /**
-     * Returns TRUE if table schemas have changed.
+     * Detects changes to the database schema and other files that are specific to this version of QCache.
+     * Returns a folder signature if changes are detected, otherwise FALSE.
      *
+     * @var string $folder_sig_file
      * @return bool
      */
-    private static function detectSchemaChange()
+    private static function detectQCacheFileChanges($folder_sig_file)
     {
-        $d = __DIR__ . DIRECTORY_SEPARATOR;
-        $schema_crc =
-            crc32(file_get_contents("{$d}DbConnectorMySQL.php")) ^
-            crc32(file_get_contents("{$d}DbConnectorMSSQL.php")) ^
-            crc32(file_get_contents("{$d}Constants.php"));
+        $folder_sig = self::getFolderSignature(realpath(__DIR__ . DIRECTORY_SEPARATOR . '..'));
 
-        $reported_schema_crc = 0;
-        if (file_exists($checksum_file = __DIR__ . '/../' . Constants::SCHEMA_CHECKSUM_FILE))
-            $reported_schema_crc = (int)file_get_contents($checksum_file);
+        $reported_folder_sig = '';
 
-        if ($reported_schema_crc != $schema_crc) {
-            file_put_contents($checksum_file, $schema_crc);
-            return true;
-        }
+        if (file_exists($folder_sig_file))
+            $reported_folder_sig = file_get_contents($folder_sig_file);
+
+        if ($reported_folder_sig != $folder_sig)
+            return $folder_sig;
 
         return false;
+    }
+
+    /**
+     * Starting from the given $folder, recursively concatenate the checksum of the contents of folders.
+     *
+     * @param string $folder
+     * @return string
+     */
+    private static function getFolderSignature($folder)
+    {
+        if (!file_exists($folder))
+            return '';
+
+        $cs_str = '';
+
+        foreach (scandir($folder) as $file)
+            if ($file[0] != '.')
+                if (is_dir($path = $folder . DIRECTORY_SEPARATOR . $file))
+                    $cs_str .= self::getFolderSignature($path);
+
+                else
+                    if (($content = @file_get_contents($path)) !== false)
+                        $cs_str .= dechex(crc32($content));
+
+        return $cs_str;
     }
 
     /**
@@ -215,16 +240,13 @@ class QCacheUtils
      */
     private static function rmdir_plus($dir, $delete_topdir=true)
     {
-        if (!file_exists($dir)) {
+        if (!file_exists($dir))
             return;
-        }
 
-        foreach (array_diff(scandir($dir), ['.', '..']) as $file) {
+        foreach (array_diff(scandir($dir), ['.', '..']) as $file)
             is_dir($path = $dir.DIRECTORY_SEPARATOR.$file) ? self::rmdir_plus($path) : unlink($path);
-        }
 
-        if ($delete_topdir) {
+        if ($delete_topdir)
             rmdir($dir);
-        }
     }
 }
