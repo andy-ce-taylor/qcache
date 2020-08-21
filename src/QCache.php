@@ -87,7 +87,7 @@ $_LOG_TO_DB = false;
         $columns = 'access_time, script, av_nanosecs, impressions, description, tables_csv, resultset';
         $sql_get_cache = "SELECT $columns FROM $this->table_qc_cache WHERE hash='$hash'";
 
-        $cache_file = $this->qcache_folder.DIRECTORY_SEPARATOR."#$hash.json";
+        $cache_file = $this->qcache_folder.DIRECTORY_SEPARATOR."#$hash.dat";
 
         if ($data = $this->ext_db_connection->read($sql_get_cache)) { // from database
             $data[0]['resultset'] = unserialize($data[0]['resultset']);
@@ -95,9 +95,7 @@ $_LOG_TO_DB = false;
             $from_db = true;
         }
         else {
-            $cached_data = null;
-            if ($data = JsonEncodedFileIO::read($cache_file)) { // from file
-                $cached_data = unserialize($data);
+            if ($cached_data = serializedDataFileIO::read($cache_file)) { // from file
                 $from_db = false;
             }
         }
@@ -136,7 +134,7 @@ $_LOG_TO_DB = false;
                         unlink($cache_file);
                     }
                 } else { // save to file
-                    JsonEncodedFileIO::write(
+                    serializedDataFileIO::write(
                         $cache_file,
                         serialize(
                             [$access_time, $script, $av_nanosecs, $impressions, $description, $tables_csv, $resultset]
@@ -200,7 +198,7 @@ $_LOG_TO_DB = false;
         }
 
         else // save to file
-            JsonEncodedFileIO::write($cache_file, serialize([$time_now, $sql, $elapsed_nanosecs, 1, $description, $tables_csv, $resultset]));
+            serializedDataFileIO::write($cache_file, [$time_now, $sql, $elapsed_nanosecs, 1, $description, $tables_csv, $resultset]);
 
 if ($_LOG_TO_DB) {
             // log it
