@@ -233,12 +233,12 @@ class QCacheUtils
 
     /**
      * Recursively delete sub-folders and their contents.
-     * Also delete the given top folder if $delete_topdir is set.
+     * Also delete the given top folder if $delete_top_dir is set.
      *
      * @param string $dir
-     * @param bool $delete_topdir
+     * @param bool $delete_top_dir
      */
-    private static function rmdir_plus($dir, $delete_topdir=true)
+    private static function rmdir_plus($dir, $delete_top_dir=true)
     {
         if (!file_exists($dir))
             return;
@@ -246,7 +246,7 @@ class QCacheUtils
         foreach (array_diff(scandir($dir), ['.', '..']) as $file)
             is_dir($path = $dir.DIRECTORY_SEPARATOR.$file) ? self::rmdir_plus($path) : unlink($path);
 
-        if ($delete_topdir)
+        if ($delete_top_dir)
             rmdir($dir);
     }
 }

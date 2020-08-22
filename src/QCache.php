@@ -1,8 +1,4 @@
 <?php
-/**
- * @noinspection SqlNoDataSourceInspection
- * @noinspection SqlDialectInspection
- */
 
 namespace acet\qcache;
 
@@ -10,6 +6,8 @@ use Exception;
 
 class QCache extends QCacheUtils
 {
+    const LOG_TO_DB = false;
+
     /** @var bool */
     private $qcache_enabled;
 
@@ -37,12 +35,12 @@ class QCache extends QCacheUtils
      * @param string    $qcache_folder
      * @param bool      $qcache_enabled
      * @param string    $module_id
-     * @throws QCacheConnectionException
+     * @throws QCacheException
      */
     function __construct($loc_conn_data, $ext_conn_data=null, $qcache_folder='', $qcache_enabled=true, $module_id='') {
 
         if (!$qcache_folder)
-            $qcache_folder = sys_get_temp_dir();
+            throw new QCacheException('The QCache folder MUST be specified');
 
         $this->qcache_folder = $qcache_folder;
         $this->qcache_enabled = $qcache_enabled;
@@ -65,19 +63,20 @@ class QCache extends QCacheUtils
     }
 
     /**
+     * Performs a SQL query or gets a cached result set.
+     * Returns SqlResultSet if successful or FALSE if the query cannot be performed.
+     * If FALSE is returned, the caller is expected to query the database directly.
+     *
      * @param string  $sql
-     * @param mixed   $tables       - array of table names, or a tables csv string, or null
+     * @param mixed   $tables       - array of table names, or a tables csv string, or null (qcache will find them))
      * @param string $description
      *
      * @return SqlResultSet|false
-     * @throws Exception
      */
     public function query($sql, $tables = null, $description = '')
     {
         if (!$this->qcache_enabled)
             return false;
-
-$_LOG_TO_DB = false;
 
         $start_nanosecs = hrtime(true);
         $time_now = time();
@@ -117,8 +116,10 @@ $_LOG_TO_DB = false;
 
                 $resultset_esc = $this->loc_db_connection->escapeBinData(serialize($resultset));
 
-                // decide whether to cache to db (faster) or file
-                if (strlen($resultset_esc) <= Constants::MAX_DB_RESULTSET_SIZE) { // save to db
+                // decide whether to cache to db or file
+                $context = strlen($resultset_esc) <= Constants::MAX_DB_RESULTSET_SIZE ? 'db' : 'qc';
+
+                if ($context == 'db') { // save to db - faster, better for small result sets
 
                     $this->loc_db_connection->write(
                         "UPDATE $this->table_qc_cache ".
@@ -133,12 +134,12 @@ $_LOG_TO_DB = false;
                     if (!$from_db && file_exists($cache_file)) {
                         unlink($cache_file);
                     }
-                } else { // save to file
+                }
+
+                else { // save to file - slower, but better for large result sets
                     serializedDataFileIO::write(
                         $cache_file,
-                        serialize(
-                            [$access_time, $script, $av_nanosecs, $impressions, $description, $tables_csv, $resultset]
-                        )
+                        [$access_time, $script, $av_nanosecs, $impressions, $description, $tables_csv, $resultset]
                     );
 
                     // if the same db record exists, delete it
@@ -147,13 +148,7 @@ $_LOG_TO_DB = false;
                     }
                 }
 
-                if ($_LOG_TO_DB) {
-                    // log it
-                    $this->loc_db_connection->write(
-                        "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) ".
-                        "VALUES ($time_now, 'db', $elapsed_nanosecs, '$hash')"
-                    );
-                }
+                $this->logTransactionStats($time_now, $context, $elapsed_nanosecs, $hash);
 
                 return $resultset;
             }
@@ -161,22 +156,16 @@ $_LOG_TO_DB = false;
             // Cache is fresh - return a quick result from cache
             $elapsed_nanosecs = hrtime(true) - $start_nanosecs;
 
-            if ($_LOG_TO_DB) {
-                // log it
-                $this->loc_db_connection->write(
-                    "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) ".
-                    "VALUES ($time_now, 'qc', $elapsed_nanosecs, '$hash')"
-                );
-            }
+            $this->logTransactionStats($time_now, 'qc', $elapsed_nanosecs, $hash);
 
             return $resultset;
         }
 
         // previously unseen SQL statement
 
-        if (is_null($tables))
+        if (is_null($tables)) // try to find table names within the statement
             if (($tables = QCacheUtils::getTables($sql)) == false)
-                throw new Exception("Bad SELECT statement");
+                return false; // no table names found
 
         $tables_csv = is_array($tables) ? implode(',', $tables) : $tables;
 
@@ -186,8 +175,10 @@ $_LOG_TO_DB = false;
 
         $resultset_esc = $this->loc_db_connection->escapeBinData(serialize($resultset));
 
-        // decide whether to save to db (faster) or file
-        if (strlen($resultset_esc) <= Constants::MAX_DB_RESULTSET_SIZE) { // save to db
+        // decide whether to cache to db or file
+        $context = strlen($resultset_esc) <= Constants::MAX_DB_RESULTSET_SIZE ? 'db' : 'qc';
+
+        if ($context == 'db') { // save to db - faster, but better for small result sets
             $description_esc = $this->loc_db_connection->escapeBinData($description);
             $script_esc = $this->loc_db_connection->escapeBinData($sql);
 
@@ -197,21 +188,17 @@ $_LOG_TO_DB = false;
             );
         }
 
-        else // save to file
+        else // save to file - slower, but better for large result sets
             serializedDataFileIO::write($cache_file, [$time_now, $sql, $elapsed_nanosecs, 1, $description, $tables_csv, $resultset]);
 
-if ($_LOG_TO_DB) {
-            // log it
-            $this->loc_db_connection->write(
-                "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) ".
-                "VALUES ($time_now, 'db', $elapsed_nanosecs, '$hash')"
-            );
-}
+        $this->logTransactionStats($time_now, $context, $elapsed_nanosecs, $hash);
 
         return $resultset;
     }
 
     /**
+     * Returns a suitable connector for the given connection details (MySQL or MsSQL, currently).
+     *
      * @param string[]  $conn_data
      * @param string    $module_id
      * @return DbConnectorMySQL|DbConnectorMSSQL
@@ -220,6 +207,7 @@ if ($_LOG_TO_DB) {
     public static function getConnection($conn_data, $module_id='')
     {
         switch ($conn_data['type']) {
+
             case 'mysql':
                 return new DbConnectorMySQL($conn_data['host'], $conn_data['user'], $conn_data['pass'], $conn_data['name'], $module_id);
 
@@ -231,6 +219,8 @@ if ($_LOG_TO_DB) {
     }
 
     /**
+     * Returns the external database connection.
+     *
      * @return DbConnectorMySQL|DbConnectorMSSQL
      */
     public function getExtDbConnection()
@@ -240,6 +230,7 @@ if ($_LOG_TO_DB) {
 
     /**
      * Returns the names of all external tables.
+     *
      * @return string[]
      */
     public function getExtDbTableNames()
@@ -249,6 +240,7 @@ if ($_LOG_TO_DB) {
 
     /**
      * Returns the names of all columns in the given external table.
+     *
      * @return string[]
      */
     public function getExtDbColumnNames($table)
@@ -257,11 +249,30 @@ if ($_LOG_TO_DB) {
     }
 
     /**
+     * Returns the PRIMARY KEY for the given external table.
+     *
      * @param $table
      * @return string|string[]
      */
     public function getExtDbPrimary($table)
     {
         return $this->ext_db_connection->getPrimary($table);
+    }
+
+    /**
+     * Logs transaction statistics to the local database.
+     *
+     * @param $time
+     * @param $context
+     * @param $nanosecs
+     * @param $hash
+     */
+    private function logTransactionStats($time, $context, $nanosecs, $hash)
+    {
+        if (self::LOG_TO_DB)
+            $this->loc_db_connection->write(
+                "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) ".
+                "VALUES ($time, $context, $nanosecs, '$hash')"
+            );
     }
 }

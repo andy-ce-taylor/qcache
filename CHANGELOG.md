@@ -1,5 +1,17 @@
 # Change Log
 
+### 1.1.11
+- QCache::constructor will now throw an exception of the qcache folder doesn't exist. 
+- Function QCache::query will now return FALSE if there are problems (instead of throwing an exception).
+- Moved logging into a separate function.
+- Comments & tidy-up.
+
+### 1.1.10
+- Solved a problem with json encoding.
+
+### 1.1.9
+- Improved version change detection.
+
 ### 1.1.8
 - Fixed up the MSSQL.
 - Temporarily commented-out logging.

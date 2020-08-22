@@ -2,7 +2,10 @@
 
 namespace acet\qcache;
 
-use Exception;
-
-class QCacheConnectionException extends Exception {
+class QCacheConnectionException extends QCacheException
+{
+    public function __construct($message="")
+    {
+        parent::__construct("Connection exception: $message");
+    }
 }
