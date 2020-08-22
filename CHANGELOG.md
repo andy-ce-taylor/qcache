@@ -1,7 +1,11 @@
 # Change Log
 
+### 1.1.12
+- Reduced file cache diversion size.
+- gz compression introduced.
+
 ### 1.1.11
-- QCache::constructor will now throw an exception of the qcache folder doesn't exist. 
+- QCache::constructor will now throw an exception if the qcache folder doesn't exist. 
 - Function QCache::query will now return FALSE if there are problems (instead of throwing an exception).
 - Moved logging into a separate function.
 - Comments & tidy-up.

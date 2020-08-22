@@ -2,11 +2,11 @@
 
 namespace acet\qcache;
 
-use Exception;
+function aa(string $str, int $level) { return $str; }
 
 class QCache extends QCacheUtils
 {
-    const LOG_TO_DB = false;
+    const RESULTSET_INDEX = 6;  // index of the resultset within the array stored in cache files
 
     /** @var bool */
     private $qcache_enabled;
@@ -37,7 +37,10 @@ class QCache extends QCacheUtils
      * @param string    $module_id
      * @throws QCacheException
      */
-    function __construct($loc_conn_data, $ext_conn_data=null, $qcache_folder='', $qcache_enabled=true, $module_id='') {
+    function __construct($loc_conn_data, $ext_conn_data=null, $qcache_folder='', $qcache_enabled=true, $module_id='')
+    {
+        if (!function_exists('gzdeflate'))
+            throw new QCacheException("Please install 'ext-zlib'");
 
         if (!$qcache_folder)
             throw new QCacheException('The QCache folder MUST be specified');
@@ -89,14 +92,13 @@ class QCache extends QCacheUtils
         $cache_file = $this->qcache_folder.DIRECTORY_SEPARATOR."#$hash.dat";
 
         if ($data = $this->ext_db_connection->read($sql_get_cache)) { // from database
-            $data[0]['resultset'] = unserialize($data[0]['resultset']);
+            $data[0]['resultset'] = unserialize(gzinflate($data[0]['resultset']));
             $cached_data = array_values($data[0]);
             $from_db = true;
         }
-        else {
-            if ($cached_data = serializedDataFileIO::read($cache_file)) { // from file
-                $from_db = false;
-            }
+        elseif ($cached_data = serializedDataFileIO::read($cache_file)) { // from file
+            $cached_data[self::RESULTSET_INDEX] = unserialize(gzinflate($cached_data[self::RESULTSET_INDEX]));
+            $from_db = false;
         }
 
         if ($cached_data) {
@@ -114,10 +116,11 @@ class QCache extends QCacheUtils
 
                 $av_nanosecs = (float)($elapsed_nanosecs + $av_nanosecs * $impressions++) / $impressions;
 
-                $resultset_esc = $this->loc_db_connection->escapeBinData(serialize($resultset));
+                $resultset_gz = gzdeflate(serialize($resultset), Constants::GZ_COMPRESSION_LEVEL);
+                $resultset_gz_esc = $this->loc_db_connection->escapeBinData($resultset_gz);
 
                 // decide whether to cache to db or file
-                $context = strlen($resultset_esc) <= Constants::MAX_DB_RESULTSET_SIZE ? 'db' : 'qc';
+                $context = strlen($resultset_gz_esc) <= Constants::MAX_DB_RESULTSET_SIZE ? 'db' : 'qc';
 
                 if ($context == 'db') { // save to db - faster, better for small result sets
 
@@ -126,7 +129,7 @@ class QCache extends QCacheUtils
                         "SET access_time=$access_time,".
                         "av_nanosecs=$av_nanosecs,".
                         "impressions=$impressions,".
-                        "resultset=$resultset_esc ".
+                        "resultset=$resultset_gz_esc ".
                         "WHERE hash='$hash'"
                     );
 
@@ -139,7 +142,7 @@ class QCache extends QCacheUtils
                 else { // save to file - slower, but better for large result sets
                     serializedDataFileIO::write(
                         $cache_file,
-                        [$access_time, $script, $av_nanosecs, $impressions, $description, $tables_csv, $resultset]
+                        [$access_time, $script, $av_nanosecs, $impressions, $description, $tables_csv, $resultset_gz]
                     );
 
                     // if the same db record exists, delete it
@@ -173,10 +176,11 @@ class QCache extends QCacheUtils
         $resultset = new SqlResultSet($this->ext_db_connection->read($sql));
         $elapsed_nanosecs = hrtime(true) - $start_nanosecs;
 
-        $resultset_esc = $this->loc_db_connection->escapeBinData(serialize($resultset));
+        $resultset_gz = gzdeflate(serialize($resultset), Constants::GZ_COMPRESSION_LEVEL);
+        $resultset_gz_esc = $this->loc_db_connection->escapeBinData($resultset_gz);
 
         // decide whether to cache to db or file
-        $context = strlen($resultset_esc) <= Constants::MAX_DB_RESULTSET_SIZE ? 'db' : 'qc';
+        $context = strlen($resultset_gz_esc) <= Constants::MAX_DB_RESULTSET_SIZE ? 'db' : 'qc';
 
         if ($context == 'db') { // save to db - faster, but better for small result sets
             $description_esc = $this->loc_db_connection->escapeBinData($description);
@@ -184,12 +188,15 @@ class QCache extends QCacheUtils
 
             $this->loc_db_connection->write(
                 "INSERT INTO $this->table_qc_cache (hash, access_time, script, av_nanosecs, impressions, description, tables_csv, resultset) ".
-                "VALUES ('$hash', $time_now, $script_esc, $elapsed_nanosecs, 1, $description_esc, '$tables_csv', $resultset_esc)"
+                "VALUES ('$hash', $time_now, $script_esc, $elapsed_nanosecs, 1, $description_esc, '$tables_csv', $resultset_gz_esc)"
             );
         }
 
         else // save to file - slower, but better for large result sets
-            serializedDataFileIO::write($cache_file, [$time_now, $sql, $elapsed_nanosecs, 1, $description, $tables_csv, $resultset]);
+            serializedDataFileIO::write(
+                $cache_file,
+                [$time_now, $sql, $elapsed_nanosecs, 1, $description, $tables_csv, $resultset_gz]
+            );
 
         $this->logTransactionStats($time_now, $context, $elapsed_nanosecs, $hash);
 
@@ -269,7 +276,7 @@ class QCache extends QCacheUtils
      */
     private function logTransactionStats($time, $context, $nanosecs, $hash)
     {
-        if (self::LOG_TO_DB)
+        if (Constants::LOG_TO_DB)
             $this->loc_db_connection->write(
                 "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) ".
                 "VALUES ($time, $context, $nanosecs, '$hash')"
