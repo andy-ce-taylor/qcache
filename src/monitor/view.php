@@ -1,6 +1,9 @@
 <?php
 namespace acet\qcache\monitor;
 
+// ToDo: This has been put on hold since the restructuring
+die('NOT YET IMPLEMENTED');
+
 session_write_close();
 require_once __DIR__ . '/../../../../autoload.php';
 
