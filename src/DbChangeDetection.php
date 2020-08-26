@@ -75,7 +75,7 @@ abstract class DbChangeDetection
         static $table_times_l1c;
 
         if (!$table_times_l1c) {
-            if (($table_times_l1c = $this->getTableTimes($loc_db)) === false)
+            if (($table_times_l1c = $this->getTableTimes($loc_db, $table_names)) === false)
                 return false;
 
             // add the db time offset to each table change time

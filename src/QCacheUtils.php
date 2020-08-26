@@ -113,13 +113,13 @@ class QCacheUtils
     /**
      * Removes cache records.
      *
-     * @param array   $conn_data
+     * @param array   $cache_db_connection_data
      * @param string  $qcache_folder
      * @param string  $module_id
      */
-    public function clearCache($conn_data, $qcache_folder, $module_id='')
+    public function clearCache($cache_db_connection_data, $qcache_folder, $module_id='')
     {
-        $conn = QCache::getConnection($conn_data, $module_id);
+        $conn = QCache::getConnection($cache_db_connection_data, $module_id);
 
         if ($module_id)
             $module_id .= '_';
@@ -127,8 +127,8 @@ class QCacheUtils
         $table_qc_cache = 'qc_' . $module_id . 'cache';
         $table_qc_logs  = 'qc_' . $module_id . 'logs';
 
-        $conn->write("TRUNCATE TABLE $table_qc_cache");
-        $conn->write("TRUNCATE TABLE $table_qc_logs");
+        $conn->truncateTable($table_qc_cache);
+        $conn->truncateTable($table_qc_logs);
 
         // delete cache files
         self::rmdir_plus($qcache_folder, false);
@@ -138,11 +138,11 @@ class QCacheUtils
      * Rebuild Qcache database tables if the Qcache version (according to the CHANGELOG) has
      * been updated or the tables are missing.
      *
-     * @param array   $conn_data
+     * @param array   $cache_db_connection_data
      * @param string  $qcache_folder
      * @param string  $module_id
      */
-    public function verifyQCacheTables($conn_data, $qcache_folder='', $module_id='')
+    public function verifyQCacheTables($cache_db_connection_data, $qcache_folder='', $module_id='')
     {
         if (!$qcache_folder)
             $qcache_folder = sys_get_temp_dir();
@@ -157,9 +157,9 @@ class QCacheUtils
             file_put_contents($folder_sig_file, $folder_sig);
         }
 
-        $conn = QCache::getConnection($conn_data, $module_id);
+        $conn = QCache::getConnection($cache_db_connection_data, $module_id);
 
-        $db_name = $conn_data['name'];
+        $db_name = $cache_db_connection_data['name'];
 
         if ($module_id)
             $module_id .= '_';
@@ -176,9 +176,11 @@ class QCacheUtils
         if ($folder_sig || !$conn->tableExists($db_name, $table_name))
             $sql .= $conn->getCreateTableSQL_logs($table_name);
 
-        $table_name = $prefix . "table_update_times";
-        if ($folder_sig || !$conn->tableExists($db_name, $table_name))
-            $sql .= $conn->getCreateTableSQL_table_update_times($table_name);
+        if ($conn->dbUsesCachedUpdatesTable()) {
+            $table_name = $prefix."table_update_times";
+            if ($folder_sig || !$conn->tableExists($db_name, $table_name))
+                $sql .= $conn->getCreateTableSQL_table_update_times($table_name);
+        }
 
         if ($sql)
             $conn->multi_query($sql);

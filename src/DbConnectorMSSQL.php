@@ -8,16 +8,9 @@ namespace acet\qcache;
 
 use DateTime;
 
-class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
+class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
 {
-    /** @var resource */
-    private $conn;
-
-    /** @var string */
-    protected $db_name;
-
-    /** @var string */
-    private $updates_table;
+    const CACHED_UPDATES_TABLE = true;
 
     /**
      * DbConnectorMSSQL constructor.
@@ -43,26 +36,30 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
         if (!$this->conn)
             throw new QCacheConnectionException("MSSQL connection error");
 
-        if ($module_id)
-            $module_id .= '_';
-
-        $this->updates_table = 'qc_' . $module_id . 'table_update_times';
-
-        $this->db_name = $database_name;
+        parent::__construct($database_name, self::CACHED_UPDATES_TABLE, $module_id);
     }
 
     /**
-     * @param string $data
+     * @param string $str
      * @return string
+     */
+    public function escapeString($str)
+    {
+        if (is_numeric($str))
+            return $str;
+
+        $unpacked = unpack('H*hex', $str);
+
+        return '0x' . $unpacked['hex'];
+    }
+
+    /**
+     * @param mixed $data
+     * @return mixed
      */
     public function escapeBinData($data)
     {
-        if (is_numeric($data))
-            return $data;
-
-        $unpacked = unpack('H*hex', $data);
-
-        return '0x' . $unpacked['hex'];
+        return $this->escapeString($data);
     }
 
     /**
@@ -113,7 +110,7 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
                 $where .= "{$selector} = '{$val}' OR ";
 
             // get rid of final 'OR'
-            $where = ' WHERE ' . substr($where, 0, -4);
+            $where = 'WHERE ' . substr($where, 0, -4);
         }
 
         $limit = $limit > 0 ? "TOP($limit)" : '';
@@ -138,7 +135,7 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
     }
 
     /**
-     * Process a SELECT for a single column and return as an array.
+     * Process a SELECT for a single columns and return as a numerically indexed array.
      * @param string $sql
      * @return array
      */
@@ -174,29 +171,40 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
     }
 
     /**
+     * @param resource $resultset
+     * @return bool
+     */
+    public function freeResultset($resultset)
+    {
+        return (bool)sqlsrv_free_stmt($resultset);
+    }
+
+    /**
      * Returns the change times for the given tables.
      *
      * Dev Notes: Table changes are recorded in sys.dm_db_index_usage_stats, but unlike the
-     * equivalent MySQL method, this table gets reset whenever MSSQL restarts. For this
-     * reason, a file is used to maintain the latest table change times.
+     * equivalent MySQL method, this table is reset whenever MSSQL restarts. For this
+     * reason, a file is used to cache the latest table change times.
      *
-     * @param mixed          $loc_db
+     * @param mixed          $cache_db
      * @param string[]|null  $tables
      * @return int[]|false
      */
-    public function getTableTimes($loc_db, $tables=null)
+    public function getTableTimes($cache_db, $tables=null)
     {
-        $specific_tables = $tables ? "AND OBJECT_ID IN (OBJECT_ID('".implode("'),OBJECT_ID('", $tables)."'))" : '';
+        $table_update_times = $cache_db->readTableUpdateTimesTable();
+
+        $specific_tables_clause = $tables ? "AND OBJECT_ID IN (OBJECT_ID('".implode("'),OBJECT_ID('", $tables)."'))" : '';
+
+        $db_name = $this->getDbName();
 
         $sql_query =
             "SELECT OBJECT_NAME(OBJECT_ID) AS TableName, last_user_update
              FROM sys.dm_db_index_usage_stats
-             WHERE database_id = DB_ID('$this->db_name') $specific_tables";
+             WHERE database_id = DB_ID('$db_name') $specific_tables_clause";
 
         if (($stmt1 = sqlsrv_query($this->conn, $sql_query)) == false)
             return false;
-
-        $data = [];
 
         $current_timestamp = (int)(new DateTime($this->getCurrentTimestamp()))->format('U');
 
@@ -210,43 +218,22 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
             else { // sys.dm_db_index_usage_stats hasn't been updated since SQL Server was started
 
                 // check whether update_time has previously been cached
-                $sql = "SELECT update_time FROM $this->updates_table WHERE name='$table_name'";
 
-                $timestamp = 0;
+                if (array_key_exists($table_name, $table_update_times)) // get the cached update_time
+                    $timestamp = $table_update_times[$table_name];
 
-                if ($stmt2 = sqlsrv_query($loc_db->conn, $sql)) {
-                    if ($row = sqlsrv_fetch_array($stmt2, SQLSRV_FETCH_ASSOC))
-                        // get the cached update_time
-                        $timestamp = $row['update_time'];
-
-                    sqlsrv_free_stmt($stmt2);
-                }
-
-                if (!$timestamp)
-                    // set update_time to the current time and store it in the table_update_times cache
+                else // set update_time to the current time and store it in the table_update_times cache
                     $timestamp = $current_timestamp;
             }
 
-            // upsert
-            sqlsrv_query($loc_db->conn,
-                "BEGIN TRAN
-                     UPDATE $this->updates_table WITH (SERIALIZABLE)
-                     SET update_time = $timestamp
-                     WHERE name = '$table_name'
-                     IF @@rowcount = 0
-                     BEGIN
-                         INSERT $this->updates_table (name, update_time)
-                         VALUES ('$table_name', $timestamp)
-                     END
-                 COMMIT TRAN"
-            );
-
-            $data[$table_name] = $timestamp;
+            $table_update_times[$table_name] = $timestamp;
         }
 
-        sqlsrv_free_stmt($stmt1);
+        $cache_db->writeTableUpdateTimesTable($table_update_times);
 
-        return $data;
+        $this->freeResultset($stmt1);
+
+        return $table_update_times;
     }
 
     /**
@@ -271,6 +258,17 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
 
         $result = sqlsrv_query($this->conn, $sql);
         return date_format(sqlsrv_fetch_array($result, SQLSRV_FETCH_ASSOC)['CURRENT_TIMESTAMP'], 'Y-m-d H:i:s');
+    }
+
+    /**
+     * Delete all rows from the given table.
+     *
+     * @param string $table
+     * @return bool
+     */
+    public function truncateTable($table)
+    {
+        return (bool)$this->write("TRUNCATE TABLE $table");
     }
 
     /**
@@ -381,12 +379,14 @@ class DbConnectorMSSQL extends DbChangeDetection implements DbConnectorInterface
     {
         static $table_names = [];
 
-        if (!isset($table_names[$this->db_name])) {
-            $sql = "SELECT table_name FROM information_schema.tables WHERE TABLE_CATALOG LIKE '{$this->db_name}'";
-            $table_names[$this->db_name] = $this->readCol($sql);
+        $db_name = $this->getDbName();
+
+        if (!isset($table_names[$db_name])) {
+            $sql = "SELECT table_name FROM information_schema.tables WHERE TABLE_CATALOG LIKE '$db_name'";
+            $table_names[$db_name] = $this->readCol($sql);
         }
 
-        return $table_names[$this->db_name];
+        return $table_names[$db_name];
     }
 
     /**

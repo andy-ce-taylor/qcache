@@ -6,8 +6,14 @@ use Exception;
 interface DbConnectorInterface
 {
     /**
-     * @param string $data
+     * @param string $str
      * @return string
+     */
+    public function escapeString($str);
+
+    /**
+     * @param mixed $data
+     * @return mixed
      */
     public function escapeBinData($data);
 
@@ -17,6 +23,8 @@ interface DbConnectorInterface
      * @return int
      */
     public function getDbTimeOffset();
+
+    public function dbUsesCachedUpdatesTable();
 
     /**
      * Returns the database engine specific SQL command which will be used to produce an
@@ -49,11 +57,25 @@ interface DbConnectorInterface
     public function write($sql);
 
     /**
+     * Delete all rows from the given table.
+     *
+     * @param string $table
+     * @return bool
+     */
+    public function truncateTable($table);
+
+    /**
      * Process multiple queries.
      * @param string $sql
      * @return bool
      */
     public function multi_query($sql);
+
+    /**
+     * @param mixed $resultset
+     * @return bool
+     */
+    public function freeResultset($resultset);
 
     /**
      * Returns the change times for the given tables.

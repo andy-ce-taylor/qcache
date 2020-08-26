@@ -8,10 +8,12 @@
 namespace acet\qcache;
 
 use DateTime;
+use Exception;
 use mysqli;
-use mysqli_result;
+use SQLite3;
+use SQLite3Result;
 
-class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
+class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
 {
     const CACHED_UPDATES_TABLE = false;
 
@@ -27,10 +29,11 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      */
     function __construct($host, $user, $pass, $database_name, $module_id='')
     {
-        $this->conn = new mysqli($host, $user, $pass, $database_name);
-
-        if ($this->conn->connect_errno)
-            throw new QCacheConnectionException("MySQL connection error: " . $this->conn->connect_errno);
+        try {
+            $this->conn = new SQLite3($database_name, SQLITE3_OPEN_READWRITE | SQLITE3_OPEN_CREATE, $pass);
+        } catch (Exception $ex) {
+            throw new QCacheConnectionException("SQLite connection error: ".$ex->getMessage());
+        }
 
         parent::__construct($database_name, self::CACHED_UPDATES_TABLE, $module_id);
     }
@@ -50,7 +53,9 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      */
     public function escapeBinData($data)
     {
-        return $this->escapeString($data);
+        $unpacked = unpack('H*hex', $data);
+
+        return "X'{$unpacked['hex']}'";
     }
 
     /**
@@ -64,10 +69,10 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
 
         if (!$database_time_offset_l1c) {
 
-            $sql = 'SELECT NOW()';
+            $sql = "SELECT datetime('now', 'localtime')";
 
             $result = $this->conn->query($sql);
-            $db_timestamp = $result->fetch_row()[0];
+            $db_timestamp = $result->fetchArray(SQLITE3_ASSOC);
 
             $database_time_offset_l1c = time() - strtotime($db_timestamp);
         }
@@ -125,9 +130,12 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
     {
         $data = [];
 
-        if ($result = $this->conn->query($sql))
-            while ($row = $result->fetch_assoc())
+        if ($result = $this->conn->query($sql)) {
+            while ($row = $result->fetchArray(SQLITE3_ASSOC))
                 $data[] = $row;
+
+            $this->freeResultset($result);
+        }
 
         return $data;
     }
@@ -141,9 +149,12 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
     {
         $data = [];
 
-        if ($result = $this->conn->query($sql))
-            while ($row = $result->fetch_array(MYSQLI_NUM))
+        if ($result = $this->conn->query($sql)) {
+            while ($row = $result->fetchArray(SQLITE3_NUM))
                 $data[] = $row[0];
+
+            $this->freeResultset($result);
+        }
 
         return $data;
     }
@@ -165,17 +176,16 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      */
     public function multi_query($sql)
     {
-        return (bool)$this->conn->multi_query($sql);
+        return (bool)$this->conn->exec($sql);
     }
 
     /**
-     * @param mysqli_result $resultset
+     * @param sqlite3result $resultset
      * @return bool
      */
     public function freeResultset($resultset)
     {
-        $resultset->free_result();
-        return true;
+        return (bool)$resultset->finalize();
     }
 
     /**
@@ -187,21 +197,20 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      */
     public function getTableTimes($cache_db, $tables=null)
     {
-        $specific_tables_clause = $tables ? "AND TABLE_NAME IN ('" . implode("','", $tables) . "')" : '';
-
-        $db_name = $this->getDbName();
+        $specific_tables_clause = $tables ? "AND name IN ('" . implode("','", $tables) . "')" : '';
 
         $sql_query =
-            "SELECT SQL_NO_CACHE TABLE_NAME, UPDATE_TIME
-             FROM information_schema.tables
-             WHERE TABLE_SCHEMA = '$db_name' $specific_tables_clause";
+            "SELECT name, sql FROM sqlite_master
+             WHERE type='table' $specific_tables_clause
+             ORDER BY name;";
 
         if (!($result = $this->conn->query($sql_query)))
             return false; // permissions problem?
 
-        while ($row = $result->fetch_assoc()) {
-            // typical mysql timestamp value: 2020-05-24 12:34:56
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+            // typical sqlite timestamp value: 2020-05-24 12:34:56
             $update_time = (int)(new DateTime($row['UPDATE_TIME']))->format('U');
+
             $table_update_times[$row['TABLE_NAME']] = $update_time;
         }
 
@@ -218,7 +227,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      */
     public function truncateTable($table)
     {
-        return (bool)$this->write("TRUNCATE TABLE $table");
+        return (bool)$this->write("DELETE FROM $table");
     }
 
     /**
@@ -230,7 +239,8 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      */
     public function tableExists($schema, $table)
     {
-        return (bool)$this->read("SHOW TABLES LIKE '$table'");
+        $sql = "SELECT name FROM sqlite_master WHERE type='table' AND name='$table'";
+        return (bool)$this->read($sql);
     }
 
     /**
@@ -244,14 +254,14 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
 
         return "DROP TABLE IF EXISTS $table_name;
                 CREATE TABLE $table_name (
-                    hash            CHAR(32)            NOT NULL PRIMARY KEY DEFAULT ' ',
+                    hash            CHAR(32)            NOT NULL PRIMARY KEY,
                     access_time     INT(11)         DEFAULT NULL,
                     script          VARCHAR(4000)   DEFAULT NULL,
-                    av_nanosecs     FLOAT           DEFAULT NULL,
+                    av_nanosecs     REAL            DEFAULT NULL,
                     impressions     INT(11)         DEFAULT NULL,
                     description     VARCHAR(200)    DEFAULT NULL,
                     tables_csv      VARCHAR(1000)   DEFAULT NULL,
-                    resultset       VARCHAR($max_resultset_size)
+                    resultset       BLOB($max_resultset_size)
                 );";
     }
 
@@ -264,10 +274,10 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
     {
         return "DROP TABLE IF EXISTS $table_name;
                 CREATE TABLE $table_name (
-                    id              INT(11)             NOT NULL PRIMARY KEY AUTO_INCREMENT,
+                    id              INT(11)             NOT NULL PRIMARY KEY,
                     time            INT(11)         DEFAULT NULL,
                     context         CHAR(4)         DEFAULT NULL,
-                    nanosecs        FLOAT           DEFAULT NULL,
+                    nanosecs        REAL            DEFAULT NULL,
                     hash            CHAR(32)        DEFAULT NULL
                 );";
     }
@@ -281,7 +291,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
     {
         return "DROP TABLE IF EXISTS $table_name;
                 CREATE TABLE $table_name (
-                    name            VARCHAR(80)         NOT NULL PRIMARY KEY DEFAULT ' ',
+                    name            VARCHAR(80)         NOT NULL PRIMARY KEY,
                     update_time     INT(11)         DEFAULT NULL
                 );";
     }
