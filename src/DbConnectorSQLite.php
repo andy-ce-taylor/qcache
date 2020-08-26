@@ -53,9 +53,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
      */
     public function escapeBinData($data)
     {
-        $unpacked = unpack('H*hex', $data);
-
-        return "X'{$unpacked['hex']}'";
+        return "X'" . unpack('H*hex', $data)['hex'] . "'";
     }
 
     /**
@@ -261,7 +259,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
                     impressions     INT(11)         DEFAULT NULL,
                     description     VARCHAR(200)    DEFAULT NULL,
                     tables_csv      VARCHAR(1000)   DEFAULT NULL,
-                    resultset       BLOB($max_resultset_size)
+                    resultset       VARCHAR($max_resultset_size)
                 );";
     }
 

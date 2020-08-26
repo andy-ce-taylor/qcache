@@ -41,7 +41,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      */
     public function escapeString($str)
     {
-        return "'" . $this->conn->escapeString($str) . "'";
+        return "'" . $this->conn->escape_string($str) . "'";
     }
 
     /**

@@ -48,9 +48,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
         if (is_numeric($str))
             return $str;
 
-        $unpacked = unpack('H*hex', $str);
-
-        return '0x' . $unpacked['hex'];
+        return '0x' . unpack('H*hex', $str)['hex'];
     }
 
     /**

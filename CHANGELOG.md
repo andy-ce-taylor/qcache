@@ -1,5 +1,7 @@
 # Change Log
 
+- Added sqlite3.
+
 ### 1.1.12
 - Reduced file cache diversion size.
 - gz compression introduced.
