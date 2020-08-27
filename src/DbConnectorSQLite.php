@@ -7,9 +7,9 @@
 
 namespace acet\qcache;
 
+use acet\qcache\exception as QcEx;
 use DateTime;
 use Exception;
-use mysqli;
 use SQLite3;
 use SQLite3Result;
 
@@ -25,14 +25,14 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
      * @param string  $pass
      * @param string  $database_name
      * @param string  $module_id
-     * @throws QCacheConnectionException
+     * @throws QcEx\ConnectionException
      */
     function __construct($host, $user, $pass, $database_name, $module_id='')
     {
         try {
             $this->conn = new SQLite3($database_name, SQLITE3_OPEN_READWRITE | SQLITE3_OPEN_CREATE, $pass);
         } catch (Exception $ex) {
-            throw new QCacheConnectionException("SQLite connection error: ".$ex->getMessage());
+            throw new QcEx\ConnectionException("SQLite connection error: ".$ex->getMessage());
         }
 
         parent::__construct($database_name, self::CACHED_UPDATES_TABLE, $module_id);
@@ -60,6 +60,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
      * Returns the difference (seconds) between database timestamps and the current system time.
      *
      * @return int
+     * @throws QcEx\TableReadException
      */
     public function getDbTimeOffset()
     {
@@ -69,7 +70,9 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
 
             $sql = "SELECT datetime('now', 'localtime')";
 
-            $result = $this->conn->query($sql);
+            if (($result = @$this->conn->query($sql)) === false)
+                throw new QcEx\TableReadException($sql, 'sqlite');
+
             $db_timestamp = $result->fetchArray(SQLITE3_ASSOC);
 
             $database_time_offset_l1c = time() - strtotime($db_timestamp);
@@ -123,17 +126,19 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
      * Process a table read request, such as SELECT, and return the response.
      * @param string $sql
      * @return array
+     * @throws QcEx\TableReadException
      */
     public function read($sql)
     {
         $data = [];
 
-        if ($result = $this->conn->query($sql)) {
-            while ($row = $result->fetchArray(SQLITE3_ASSOC))
-                $data[] = $row;
+        if (($result = @$this->conn->query($sql)) === false)
+            throw new QcEx\TableReadException($sql, 'sqlite');
 
-            $this->freeResultset($result);
-        }
+        while ($row = $result->fetchArray(SQLITE3_ASSOC))
+            $data[] = $row;
+
+        $this->freeResultset($result);
 
         return $data;
     }
@@ -142,17 +147,19 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
      * Process a SELECT for a single columns and return as a numerically indexed array.
      * @param string $sql
      * @return array
+     * @throws QcEx\TableReadException
      */
     public function readCol($sql)
     {
         $data = [];
 
-        if ($result = $this->conn->query($sql)) {
-            while ($row = $result->fetchArray(SQLITE3_NUM))
-                $data[] = $row[0];
+        if (($result = @$this->conn->query($sql)) === false)
+            throw new QcEx\TableReadException($sql, 'sqlite');
 
-            $this->freeResultset($result);
-        }
+        while ($row = $result->fetchArray(SQLITE3_NUM))
+            $data[] = $row[0];
+
+        $this->freeResultset($result);
 
         return $data;
     }
@@ -161,20 +168,25 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
      * Process a table write request, such as INSERT or UPDATE.
      * @param string $sql
      * @return bool
+     * @throws QcEx\TableWriteException
      */
     public function write($sql)
     {
-        return (bool)$this->conn->query($sql);
+        if (@$this->conn->exec($sql) === false)
+            throw new QcEx\TableWriteException($sql, 'sqlite');
+
+        return true;
     }
 
     /**
      * Process multiple queries.
      * @param string $sql
      * @return bool
+     * @throws QcEx\TableWriteException
      */
     public function multi_query($sql)
     {
-        return (bool)$this->conn->exec($sql);
+        return $this->write($sql);
     }
 
     /**
@@ -189,21 +201,22 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
     /**
      * Returns the change times for the given tables.
      *
-     * @param mixed          $cache_db
-     * @param string[]|null  $tables
+     * @param mixed $cache_db
+     * @param string[]|null $tables
      * @return int[]|false
+     * @throws QcEx\TableReadException
      */
     public function getTableTimes($cache_db, $tables=null)
     {
         $specific_tables_clause = $tables ? "AND name IN ('" . implode("','", $tables) . "')" : '';
 
-        $sql_query =
+        $sql =
             "SELECT name, sql FROM sqlite_master
              WHERE type='table' $specific_tables_clause
              ORDER BY name;";
 
-        if (!($result = $this->conn->query($sql_query)))
-            return false; // permissions problem?
+        if (($result = @$this->conn->query($sql)) === false)
+            throw new QcEx\TableReadException($sql, 'sqlite');
 
         while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
             // typical sqlite timestamp value: 2020-05-24 12:34:56
@@ -222,10 +235,11 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
      *
      * @param string $table
      * @return bool
+     * @throws QcEx\TableWriteException
      */
     public function truncateTable($table)
     {
-        return (bool)$this->write("DELETE FROM $table");
+        return $this->write("DELETE FROM $table");
     }
 
     /**
@@ -234,10 +248,12 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
      * @param string $schema
      * @param string $table
      * @return bool
+     * @throws QcEx\TableReadException
      */
     public function tableExists($schema, $table)
     {
         $sql = "SELECT name FROM sqlite_master WHERE type='table' AND name='$table'";
+
         return (bool)$this->read($sql);
     }
 
@@ -297,6 +313,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
     /**
      * Returns the primary keys for the given table.
      * @return string[]
+     * @throws QcEx\TableReadException
      */
     public function getPrimary($table)
     {
@@ -304,9 +321,11 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
 
         $data = [];
 
-        if ($result = $this->conn->query($sql))
-            while ($row = $result->fetch_assoc())
-                $data[] = $row['Column_name'];
+        if (($result = @$this->conn->query($sql)) === false)
+            throw new QcEx\TableReadException($sql, 'sqlite');
+
+        while ($row = $result->fetchArray(SQLITE3_ASSOC))
+            $data[] = $row['Column_name'];
 
         return $data;
     }
@@ -315,6 +334,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
     /**
      * Returns the names of all external tables.
      * @return string[]
+     * @throws QcEx\TableReadException
      */
     public function getTableNames()
     {
@@ -333,16 +353,17 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
     /**
      * Returns the names of all columns in the given external table.
      * @return string[]
+     * @throws QcEx\TableReadException
      */
     public function getColumnNames($table)
     {
         $db_name = $this->getDbName();
 
         return $this->readCol(
-            "SELECT `COLUMN_NAME` 
-             FROM `INFORMATION_SCHEMA`.`COLUMNS` 
-             WHERE `TABLE_SCHEMA`='$db_name'
-             AND `TABLE_NAME`='$table'"
+            "SELECT COLUMN_NAME 
+             FROM INFORMATION_SCHEMA.COLUMNS 
+             WHERE TABLE_SCHEMA = '$db_name'
+             AND TABLE_NAME='$table'"
         );
     }
 }

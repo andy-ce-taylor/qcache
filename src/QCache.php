@@ -2,6 +2,8 @@
 
 namespace acet\qcache;
 
+use acet\qcache\exception as QcEx;
+
 function aa(string $str, int $level) { return $str; }
 
 class QCache extends QCacheUtils
@@ -35,12 +37,12 @@ class QCache extends QCacheUtils
      * @param string[]  $target_db_connection_data
      * @param bool      $qcache_enabled
      * @param string    $module_id
-     * @throws QCacheException
+     * @throws QcEx\QCacheException
      */
     function __construct($qcache_folder, $cache_db_connection_data, $target_db_connection_data=null, $qcache_enabled=true, $module_id='')
     {
         if (!function_exists('gzdeflate'))
-            throw new QCacheException("Please install 'ext-zlib'");
+            throw new QcEx\QCacheException("Please install 'ext-zlib'");
 
         $this->qcache_folder = $qcache_folder;
         $this->qcache_enabled = $qcache_enabled;
@@ -206,7 +208,7 @@ class QCache extends QCacheUtils
      * @param string[]  $db_connection_data
      * @param string    $module_id
      * @return DbConnectorInterface
-     * @throws QCacheConnectionException
+     * @throws QcEx\ConnectionException
      */
     public static function getConnection($db_connection_data, $module_id='')
     {
@@ -220,7 +222,7 @@ class QCache extends QCacheUtils
             );
         }
 
-        throw new QCacheConnectionException("Unsupported database type - \"{$db_connection_data['type']}\"");
+        throw new QcEx\ConnectionException("Unsupported database type - \"{$db_connection_data['type']}\"");
     }
 
     /**

@@ -7,6 +7,7 @@
 
 namespace acet\qcache;
 
+use acet\qcache\exception as QcEx;
 use DateTime;
 use mysqli;
 use mysqli_result;
@@ -23,14 +24,14 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      * @param string  $pass
      * @param string  $database_name
      * @param string  $module_id
-     * @throws QCacheConnectionException
+     * @throws QcEx\ConnectionException
      */
     function __construct($host, $user, $pass, $database_name, $module_id='')
     {
         $this->conn = new mysqli($host, $user, $pass, $database_name);
 
         if ($this->conn->connect_errno)
-            throw new QCacheConnectionException("MySQL connection error: " . $this->conn->connect_errno);
+            throw new QcEx\ConnectionException("MySQL connection error: " . $this->conn->connect_errno);
 
         parent::__construct($database_name, self::CACHED_UPDATES_TABLE, $module_id);
     }
@@ -57,6 +58,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      * Returns the difference (seconds) between database timestamps and the current system time.
      *
      * @return int
+     * @throws QcEx\TableReadException
      */
     public function getDbTimeOffset()
     {
@@ -66,8 +68,12 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
 
             $sql = 'SELECT NOW()';
 
-            $result = $this->conn->query($sql);
+            if (($result = $this->conn->query($sql)) === false)
+                throw new QcEx\TableReadException($sql, 'mysql');
+
             $db_timestamp = $result->fetch_row()[0];
+
+            $this->freeResultset($result);
 
             $database_time_offset_l1c = time() - strtotime($db_timestamp);
         }
@@ -120,14 +126,19 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      * Process a table read request, such as SELECT, and return the response.
      * @param string $sql
      * @return array
+     * @throws QcEx\TableReadException
      */
     public function read($sql)
     {
         $data = [];
 
-        if ($result = $this->conn->query($sql))
-            while ($row = $result->fetch_assoc())
-                $data[] = $row;
+        if (($result = $this->conn->query($sql)) === false)
+            throw new QcEx\TableReadException($sql, 'mysql');
+
+        while ($row = $result->fetch_assoc())
+            $data[] = $row;
+
+        $this->freeResultset($result);
 
         return $data;
     }
@@ -136,14 +147,19 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      * Process a SELECT for a single columns and return as a numerically indexed array.
      * @param string $sql
      * @return array
+     * @throws QcEx\TableReadException
      */
     public function readCol($sql)
     {
         $data = [];
 
-        if ($result = $this->conn->query($sql))
-            while ($row = $result->fetch_array(MYSQLI_NUM))
-                $data[] = $row[0];
+        if (($result = $this->conn->query($sql)) === false)
+            throw new QcEx\TableReadException($sql, 'mysql');
+
+        while ($row = $result->fetch_array(MYSQLI_NUM))
+            $data[] = $row[0];
+
+        $this->freeResultset($result);
 
         return $data;
     }
@@ -152,20 +168,25 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      * Process a table write request, such as INSERT or UPDATE.
      * @param string $sql
      * @return bool
+     * @throws QcEx\TableWriteException
      */
     public function write($sql)
     {
-        return (bool)$this->conn->query($sql);
+        if ($this->conn->query($sql) === false)
+            throw new QcEx\TableWriteException($sql, 'mysql');
+
+        return true;
     }
 
     /**
      * Process multiple queries.
      * @param string $sql
      * @return bool
+     * @throws QcEx\TableWriteException
      */
     public function multi_query($sql)
     {
-        return (bool)$this->conn->multi_query($sql);
+        return $this->write($sql);
     }
 
     /**
@@ -181,9 +202,10 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
     /**
      * Returns the change times for the given tables.
      *
-     * @param mixed          $cache_db
-     * @param string[]|null  $tables
+     * @param mixed $cache_db
+     * @param string[]|null $tables
      * @return int[]|false
+     * @throws QcEx\TableReadException
      */
     public function getTableTimes($cache_db, $tables=null)
     {
@@ -191,13 +213,13 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
 
         $db_name = $this->getDbName();
 
-        $sql_query =
+        $sql =
             "SELECT SQL_NO_CACHE TABLE_NAME, UPDATE_TIME
              FROM information_schema.tables
              WHERE TABLE_SCHEMA = '$db_name' $specific_tables_clause";
 
-        if (!($result = $this->conn->query($sql_query)))
-            return false; // permissions problem?
+        if (($result = @$this->conn->query($sql)) === false)
+            throw new QcEx\TableReadException($sql, 'mysql');
 
         while ($row = $result->fetch_assoc()) {
             // typical mysql timestamp value: 2020-05-24 12:34:56
@@ -215,10 +237,11 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      *
      * @param string $table
      * @return bool
+     * @throws QcEx\TableWriteException
      */
     public function truncateTable($table)
     {
-        return (bool)$this->write("TRUNCATE TABLE $table");
+        return $this->write("TRUNCATE TABLE $table");
     }
 
     /**
@@ -227,6 +250,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      * @param string $schema
      * @param string $table
      * @return bool
+     * @throws QcEx\TableReadException
      */
     public function tableExists($schema, $table)
     {
@@ -289,6 +313,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
     /**
      * Returns the primary keys for the given table.
      * @return string[]
+     * @throws QcEx\TableReadException
      */
     public function getPrimary($table)
     {
@@ -296,9 +321,13 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
 
         $data = [];
 
-        if ($result = $this->conn->query($sql))
-            while ($row = $result->fetch_assoc())
-                $data[] = $row['Column_name'];
+        if (($result = @$this->conn->query($sql)) === false)
+            throw new QcEx\TableReadException($sql, 'mysql');
+
+        while ($row = $result->fetch_assoc())
+            $data[] = $row['Column_name'];
+
+        $this->freeResultset($result);
 
         return $data;
     }
@@ -307,6 +336,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
     /**
      * Returns the names of all external tables.
      * @return string[]
+     * @throws QcEx\TableReadException
      */
     public function getTableNames()
     {
@@ -325,6 +355,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
     /**
      * Returns the names of all columns in the given external table.
      * @return string[]
+     * @throws QcEx\TableReadException
      */
     public function getColumnNames($table)
     {
