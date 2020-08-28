@@ -10,6 +10,8 @@ use acet\qcache\connector as Conn;
 
 class QCacheUtils
 {
+    const FOLDER_SIG_FILE = 'folder_signature.txt';
+
     /**
      * Returns a description suitable for passing to QCache::query.
      *
@@ -115,13 +117,14 @@ class QCacheUtils
     /**
      * Removes cache records.
      *
+     * @param array    $qcache_config
      * @param string[] $db_connection_cache_data
      * @param string[] $db_connection_target_data
      * @param string   $qcache_folder
      */
-    public function clearCache($db_connection_cache_data, $db_connection_target_data, $qcache_folder)
+    public function clearCache($qcache_config, $db_connection_cache_data, $db_connection_target_data)
     {
-        $conn = QCache::getConnection($db_connection_cache_data);
+        $conn = QCache::getConnection($qcache_config, $db_connection_cache_data);
 
         $target_connection_sig = Conn\DbConnector::getSignature($db_connection_target_data);
 
@@ -129,36 +132,33 @@ class QCacheUtils
         $conn->truncateTable($target_connection_sig . '_logs');
 
         // delete cache files
-        self::deletePrefixedFiles($qcache_folder, $target_connection_sig);
+        self::deletePrefixedFiles($qcache_config['qcache_folder'], $target_connection_sig);
     }
 
     /**
-     * Rebuild Qcache database tables if the Qcache version (according to the CHANGELOG) has
-     * been updated or the tables are missing.
+     * Rebuild Qcache database tables if Qcache has been updated or the tables are missing.
      *
      * @param string[] $db_connection_cache_data
      * @param string[] $db_connection_target_data
-     * @param string   $qcache_folder
+     * @param array    $qcache_config
+     * @throws exception\ConnectionException
      */
-    public function verifyQCacheTables($db_connection_cache_data, $db_connection_target_data, $qcache_folder='')
+    public function verifyQCacheTables($db_connection_cache_data, $db_connection_target_data, $qcache_config)
     {
         $target_connection_sig = Conn\DbConnector::getSignature($db_connection_target_data);
 
-        if (!$qcache_folder)
-            $qcache_folder = sys_get_temp_dir();
-
-        $folder_sig_file = $qcache_folder . DIRECTORY_SEPARATOR . Constants::FOLDER_SIG_FILE;
+        $folder_sig_file = $qcache_config['qcache_folder'] . DIRECTORY_SEPARATOR . self::FOLDER_SIG_FILE;
 
         $folder_sig = self::detectQCacheFileChanges($folder_sig_file);
 
         if ($folder_sig) {
             // delete cache files
-            self::deletePrefixedFiles($qcache_folder, $target_connection_sig);
+            self::deletePrefixedFiles($qcache_config['qcache_folder'], $target_connection_sig);
             @unlink($folder_sig_file);
             file_put_contents($folder_sig_file, $folder_sig);
         }
 
-        $conn = QCache::getConnection($db_connection_cache_data);
+        $conn = QCache::getConnection($qcache_config, $db_connection_cache_data);
 
         $db_name = $db_connection_cache_data['name'];
 

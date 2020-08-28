@@ -6,7 +6,6 @@
 
 namespace acet\qcache\connector;
 
-use acet\qcache\Constants;
 use acet\qcache\exception as QcEx;
 use DateTime;
 
@@ -17,10 +16,11 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
     /**
      * DbConnectorMSSQL constructor.
      *
+     * @param array    $qcache_config
      * @param string[] $db_connection_data
      * @throws QcEx\ConnectionException
      */
-    function __construct($db_connection_data)
+    function __construct($qcache_config, $db_connection_data)
     {
         $this->conn = sqlsrv_connect(
             $db_connection_data['host'],
@@ -34,7 +34,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
         if (!$this->conn)
             throw new QcEx\ConnectionException("MSSQL connection error");
 
-        parent::__construct($db_connection_data, self::CACHED_UPDATES_TABLE);
+        parent::__construct($qcache_config, $db_connection_data, self::CACHED_UPDATES_TABLE);
     }
 
     /**
@@ -318,7 +318,6 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
     public function getCreateTableSQL_cache($table_name)
     {
         $table_name = 'dbo.' . $table_name;
-        $max_resultset_size = Constants::MAX_DB_RESULTSET_SIZE;
 
         return "IF OBJECT_ID('$table_name', 'U') IS NOT NULL BEGIN
                     DROP TABLE $table_name;
@@ -331,7 +330,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
                     impressions     INT             DEFAULT NULL,
                     description     VARCHAR(200)    DEFAULT NULL,
                     tables_csv      VARCHAR(1000)   DEFAULT NULL,
-                    resultset       VARCHAR($max_resultset_size)
+                    resultset       VARCHAR({$this->qcache_config['max_db_resultset_size']})
                 );";
     }
 

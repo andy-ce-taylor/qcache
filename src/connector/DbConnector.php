@@ -16,6 +16,9 @@ class DbConnector extends DbChangeDetection
     /** @var mysqli|SQLite3|resource */
     protected $conn;
 
+    /** @var array */
+    protected $qcache_config;
+
     /** @var string */
     private $db_name;
 
@@ -28,11 +31,13 @@ class DbConnector extends DbChangeDetection
     /**
      * DbConnector constructor.
      *
+     * @param array    $qcache_config
      * @param string[] $db_connection_data
      * @param bool     $cached_updates_table
      */
-    function __construct($db_connection_data, $cached_updates_table)
+    function __construct($qcache_config, $db_connection_data, $cached_updates_table)
     {
+        $this->qcache_config = $qcache_config;
         $this->db_name = $db_connection_data['name'];
 
         $this->db_uses_cached_updates_table = $cached_updates_table;
@@ -58,7 +63,7 @@ class DbConnector extends DbChangeDetection
     {
         $type = strtolower($db_connection['type']);
         $prefix = $type == 'mssql' ? 'dbo.' : '';
-        $sig = $type . $db_connection['host'] . $db_connection['name'];
+        $sig = "{$prefix}{$type}_{$db_connection['host']}_{$db_connection['name']}";
 
         return $prefix . $sig;
     }

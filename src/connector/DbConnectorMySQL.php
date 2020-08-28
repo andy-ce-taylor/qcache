@@ -7,7 +7,6 @@
 
 namespace acet\qcache\connector;
 
-use acet\qcache\Constants;
 use acet\qcache\exception as QcEx;
 use DateTime;
 use mysqli;
@@ -20,10 +19,11 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
     /**
      * DbConnectorMySQL constructor.
      *
+     * @param array    $qcache_config
      * @param string[] $db_connection_data
      * @throws QcEx\ConnectionException
      */
-    function __construct($db_connection_data)
+    function __construct($qcache_config, $db_connection_data)
     {
         $this->conn = new mysqli(
             $db_connection_data['host'],
@@ -35,7 +35,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
         if ($this->conn->connect_errno)
             throw new QcEx\ConnectionException("MySQL connection error: " . $this->conn->connect_errno);
 
-        parent::__construct($db_connection_data, self::CACHED_UPDATES_TABLE);
+        parent::__construct($qcache_config, $db_connection_data, self::CACHED_UPDATES_TABLE);
     }
 
     /**
@@ -266,8 +266,6 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      */
     public function getCreateTableSQL_cache($table_name)
     {
-        $max_resultset_size = Constants::MAX_DB_RESULTSET_SIZE;
-
         return "DROP TABLE IF EXISTS $table_name;
                 CREATE TABLE $table_name (
                     hash            CHAR(32)            NOT NULL PRIMARY KEY DEFAULT ' ',
@@ -277,7 +275,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
                     impressions     INT(11)         DEFAULT NULL,
                     description     VARCHAR(200)    DEFAULT NULL,
                     tables_csv      VARCHAR(1000)   DEFAULT NULL,
-                    resultset       VARCHAR($max_resultset_size)
+                    resultset       VARCHAR({$this->qcache_config['max_db_resultset_size']})
                 );";
     }
 
