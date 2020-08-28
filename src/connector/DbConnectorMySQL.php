@@ -5,8 +5,9 @@
  * @noinspection SqlDialectInspection
  */
 
-namespace acet\qcache;
+namespace acet\qcache\connector;
 
+use acet\qcache\Constants;
 use acet\qcache\exception as QcEx;
 use DateTime;
 use mysqli;
@@ -19,21 +20,22 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
     /**
      * DbConnectorMySQL constructor.
      *
-     * @param string  $host
-     * @param string  $user
-     * @param string  $pass
-     * @param string  $database_name
-     * @param string  $module_id
+     * @param string[] $db_connection_data
      * @throws QcEx\ConnectionException
      */
-    function __construct($host, $user, $pass, $database_name, $module_id='')
+    function __construct($db_connection_data)
     {
-        $this->conn = new mysqli($host, $user, $pass, $database_name);
+        $this->conn = new mysqli(
+            $db_connection_data['host'],
+            $db_connection_data['user'],
+            $db_connection_data['pass'],
+            $db_connection_data['name']
+        );
 
         if ($this->conn->connect_errno)
             throw new QcEx\ConnectionException("MySQL connection error: " . $this->conn->connect_errno);
 
-        parent::__construct($database_name, self::CACHED_UPDATES_TABLE, $module_id);
+        parent::__construct($db_connection_data, self::CACHED_UPDATES_TABLE);
     }
 
     /**

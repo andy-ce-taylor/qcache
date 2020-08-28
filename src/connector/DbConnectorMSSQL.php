@@ -4,8 +4,9 @@
  * @noinspection SqlDialectInspection
  */
 
-namespace acet\qcache;
+namespace acet\qcache\connector;
 
+use acet\qcache\Constants;
 use acet\qcache\exception as QcEx;
 use DateTime;
 
@@ -16,28 +17,24 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
     /**
      * DbConnectorMSSQL constructor.
      *
-     * @param string  $host
-     * @param string  $user
-     * @param string  $pass
-     * @param string  $database_name
-     * @param string  $module_id
+     * @param string[] $db_connection_data
      * @throws QcEx\ConnectionException
      */
-    function __construct($host, $user, $pass, $database_name, $module_id='')
+    function __construct($db_connection_data)
     {
         $this->conn = sqlsrv_connect(
-            $host,
+            $db_connection_data['host'],
             [
-                'Database'  => $database_name,
-                'UID'       => $user,
-                'PWD'       => $pass
+                'Database'  => $db_connection_data['name'],
+                'UID'       => $db_connection_data['user'],
+                'PWD'       => $db_connection_data['pass']
             ]
         );
 
         if (!$this->conn)
             throw new QcEx\ConnectionException("MSSQL connection error");
 
-        parent::__construct($database_name, self::CACHED_UPDATES_TABLE, $module_id);
+        parent::__construct($db_connection_data, self::CACHED_UPDATES_TABLE);
     }
 
     /**

@@ -1,5 +1,6 @@
 <?php
-namespace acet\qcache;
+
+namespace acet\qcache\connector;
 
 use Exception;
 

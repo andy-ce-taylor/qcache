@@ -5,8 +5,9 @@
  * @noinspection SqlDialectInspection
  */
 
-namespace acet\qcache;
+namespace acet\qcache\connector;
 
+use acet\qcache\Constants;
 use acet\qcache\exception as QcEx;
 use DateTime;
 use Exception;
@@ -20,22 +21,24 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
     /**
      * DbConnectorMySQL constructor.
      *
-     * @param string  $host
-     * @param string  $user
-     * @param string  $pass
-     * @param string  $database_name
-     * @param string  $module_id
+     * @param string[] $db_connection_data
      * @throws QcEx\ConnectionException
      */
-    function __construct($host, $user, $pass, $database_name, $module_id='')
+    function __construct($db_connection_data)
     {
         try {
-            $this->conn = new SQLite3($database_name, SQLITE3_OPEN_READWRITE | SQLITE3_OPEN_CREATE, $pass);
+
+            $this->conn = new SQLite3(
+                $db_connection_data['name'],
+                SQLITE3_OPEN_READWRITE | SQLITE3_OPEN_CREATE,
+                $db_connection_data['pass']
+            );
+
         } catch (Exception $ex) {
             throw new QcEx\ConnectionException("SQLite connection error: ".$ex->getMessage());
         }
 
-        parent::__construct($database_name, self::CACHED_UPDATES_TABLE, $module_id);
+        parent::__construct($db_connection_data, self::CACHED_UPDATES_TABLE);
     }
 
     /**

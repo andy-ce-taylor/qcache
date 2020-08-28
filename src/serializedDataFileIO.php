@@ -1,7 +1,7 @@
 <?php
 namespace acet\qcache;
 
-class serializedDataFileIO
+class SerializedDataFileIO
 {
     /**
      * @param string  $file

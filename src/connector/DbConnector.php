@@ -5,7 +5,7 @@
  * @noinspection SqlDialectInspection
  */
 
-namespace acet\qcache;
+namespace acet\qcache\connector;
 
 use DateTime;
 use mysqli;
@@ -28,21 +28,17 @@ class DbConnector extends DbChangeDetection
     /**
      * DbConnector constructor.
      *
-     * @param string  $database_name
-     * @param bool    $cached_updates_table
-     * @param string  $module_id
+     * @param string[] $db_connection_data
+     * @param bool     $cached_updates_table
      */
-    function __construct($database_name, $cached_updates_table, $module_id='')
+    function __construct($db_connection_data, $cached_updates_table)
     {
-        $this->db_name = $database_name;
-
-        if ($module_id)
-            $module_id .= '_';
+        $this->db_name = $db_connection_data['name'];
 
         $this->db_uses_cached_updates_table = $cached_updates_table;
 
         if ($cached_updates_table)
-        $this->updates_table = 'qc_' . $module_id . 'table_update_times';
+            $this->updates_table = self::getSignature($db_connection_data) . '_table_update_times';
     }
 
     // Getters
@@ -52,6 +48,20 @@ class DbConnector extends DbChangeDetection
     protected function getDbName()                      { return $this->db_name; }
     protected function getTableUpdateTimesTableName()   { return $this->updates_table; }
 
+    /**
+     * Returns a string that uniquely identifies a database connection.
+     *
+     * @param string[] $db_connection
+     * @return string
+     */
+    public static function getSignature($db_connection)
+    {
+        $type = strtolower($db_connection['type']);
+        $prefix = $type == 'mssql' ? 'dbo.' : '';
+        $sig = $type . $db_connection['host'] . $db_connection['name'];
+
+        return $prefix . $sig;
+    }
 
     // Universal scripts
 

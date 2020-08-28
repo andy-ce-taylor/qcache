@@ -106,9 +106,7 @@ class SqlResultSet
         if ($this->row_ix == $this->num_rows)
             return null;
 
-        $row = $this->rows[$this->row_ix++];
-
-        return $row;
+        return $this->rows[$this->row_ix++];
     }
 
     /**

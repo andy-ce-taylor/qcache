@@ -6,6 +6,8 @@
 
 namespace acet\qcache;
 
+use acet\qcache\connector as Conn;
+
 class QCacheUtils
 {
     /**
@@ -51,7 +53,7 @@ class QCacheUtils
     }
 
     /**
-     * Returns the names of all tables involved in the given SQL statement.
+     * Returns the names of all tables participating in the given SQL statement.
      *
      * @param string $qstr
      * @return string[]|bool
@@ -113,37 +115,35 @@ class QCacheUtils
     /**
      * Removes cache records.
      *
-     * @param array   $cache_db_connection_data
-     * @param string  $qcache_folder
-     * @param string  $module_id
+     * @param string[] $db_connection_cache_data
+     * @param string[] $db_connection_target_data
+     * @param string   $qcache_folder
      */
-    public function clearCache($cache_db_connection_data, $qcache_folder, $module_id='')
+    public function clearCache($db_connection_cache_data, $db_connection_target_data, $qcache_folder)
     {
-        $conn = QCache::getConnection($cache_db_connection_data, $module_id);
+        $conn = QCache::getConnection($db_connection_cache_data);
 
-        if ($module_id)
-            $module_id .= '_';
+        $target_connection_sig = Conn\DbConnector::getSignature($db_connection_target_data);
 
-        $table_qc_cache = 'qc_' . $module_id . 'cache';
-        $table_qc_logs  = 'qc_' . $module_id . 'logs';
-
-        $conn->truncateTable($table_qc_cache);
-        $conn->truncateTable($table_qc_logs);
+        $conn->truncateTable($target_connection_sig . '_cache');
+        $conn->truncateTable($target_connection_sig . '_logs');
 
         // delete cache files
-        self::rmdir_plus($qcache_folder, false);
+        self::deletePrefixedFiles($qcache_folder, $target_connection_sig);
     }
 
     /**
      * Rebuild Qcache database tables if the Qcache version (according to the CHANGELOG) has
      * been updated or the tables are missing.
      *
-     * @param array   $cache_db_connection_data
-     * @param string  $qcache_folder
-     * @param string  $module_id
+     * @param string[] $db_connection_cache_data
+     * @param string[] $db_connection_target_data
+     * @param string   $qcache_folder
      */
-    public function verifyQCacheTables($cache_db_connection_data, $qcache_folder='', $module_id='')
+    public function verifyQCacheTables($db_connection_cache_data, $db_connection_target_data, $qcache_folder='')
     {
+        $target_connection_sig = Conn\DbConnector::getSignature($db_connection_target_data);
+
         if (!$qcache_folder)
             $qcache_folder = sys_get_temp_dir();
 
@@ -153,31 +153,27 @@ class QCacheUtils
 
         if ($folder_sig) {
             // delete cache files
-            self::rmdir_plus($qcache_folder, false);
+            self::deletePrefixedFiles($qcache_folder, $target_connection_sig);
+            @unlink($folder_sig_file);
             file_put_contents($folder_sig_file, $folder_sig);
         }
 
-        $conn = QCache::getConnection($cache_db_connection_data, $module_id);
+        $conn = QCache::getConnection($db_connection_cache_data);
 
-        $db_name = $cache_db_connection_data['name'];
-
-        if ($module_id)
-            $module_id .= '_';
-
-        $prefix = 'qc_' . $module_id;
+        $db_name = $db_connection_cache_data['name'];
 
         $sql = '';
 
-        $table_name = $prefix . "cache";
+        $table_name = $target_connection_sig . '_cache';
         if ($folder_sig || !$conn->tableExists($db_name, $table_name))
             $sql .= $conn->getCreateTableSQL_cache($table_name);
 
-        $table_name = $prefix . "logs";
+        $table_name = $target_connection_sig . '_logs';
         if ($folder_sig || !$conn->tableExists($db_name, $table_name))
             $sql .= $conn->getCreateTableSQL_logs($table_name);
 
         if ($conn->dbUsesCachedUpdatesTable()) {
-            $table_name = $prefix."table_update_times";
+            $table_name = $target_connection_sig . '_table_update_times';
             if ($folder_sig || !$conn->tableExists($db_name, $table_name))
                 $sql .= $conn->getCreateTableSQL_table_update_times($table_name);
         }
@@ -234,8 +230,26 @@ class QCacheUtils
     }
 
     /**
-     * Recursively delete sub-folders and their contents.
-     * Also delete the given top folder if $delete_top_dir is set.
+     * Deletes files in the given $dir whose names start with the given $file_name_prefix.
+     *
+     * @param string $dir
+     * @param string $prefix
+     */
+    private static function deletePrefixedFiles($dir, $file_name_prefix)
+    {
+        if (!file_exists($dir))
+            return;
+
+        $slen = strlen($file_name_prefix);
+
+        foreach (array_diff(scandir($dir), ['.', '..']) as $file)
+            if (substr($file, 0, $slen) == $file_name_prefix)
+                unlink($dir . DIRECTORY_SEPARATOR . $file);
+    }
+
+    /**
+     * Recursively deletes sub-folders and their contents.
+     * Also deletes the given $dir if $delete_top_dir is set.
      *
      * @param string $dir
      * @param bool $delete_top_dir
