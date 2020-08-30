@@ -2,7 +2,7 @@
 
 namespace acet\qcache\connector;
 
-use Exception;
+use acet\qcache\exception as QcEx;
 
 interface DbConnectorInterface
 {
@@ -69,8 +69,9 @@ interface DbConnectorInterface
      * Process multiple queries.
      * @param string $sql
      * @return bool
+     * @throws QcEx\TableWriteException
      */
-    public function multi_query($sql);
+    public function multi_write($sql);
 
     /**
      * @param mixed $resultset

@@ -34,6 +34,14 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
                 $db_connection_data['pass']
             );
 
+            $this->conn->exec('PRAGMA temp_store = MEMORY');
+
+//          $dir = $qcache_config['qcache_folder'];
+//          if (substr($db_connection_data['name'], 0, strlen($dir)) == $dir) {
+//              $this->conn->exec('PRAGMA synchronous = OFF');
+//              $this->conn->exec('PRAGMA journal_mode = OFF');
+//          }
+
         } catch (Exception $ex) {
             throw new QcEx\ConnectionException("SQLite connection error: ".$ex->getMessage());
         }
@@ -187,9 +195,12 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
      * @return bool
      * @throws QcEx\TableWriteException
      */
-    public function multi_query($sql)
+    public function multi_write($sql)
     {
-        return $this->write($sql);
+        $this->conn->exec("BEGIN TRANSACTION");
+        $ret = $this->conn->exec($sql);
+        $this->conn->exec("END TRANSACTION");
+        return $ret;
     }
 
     /**
@@ -242,7 +253,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
      */
     public function truncateTable($table)
     {
-        return $this->write("DELETE FROM $table");
+        return $this->conn->exec("DELETE FROM $table");
     }
 
     /**

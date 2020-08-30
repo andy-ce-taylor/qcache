@@ -1,5 +1,14 @@
 # Change Log
 
+### 1.2.1
+- Improvements to the db connectors.
+- Improved sanity checks.
+- Combined various settings into a single array.
+
+### 1.2.0
+- Removed a forgotten remnant of the monitoring code - I'll come back to this at a later date.
+- Optimised cache file cut-off size.
+- Added more exception handlers.
 - Added sqlite3.
 
 ### 1.1.12

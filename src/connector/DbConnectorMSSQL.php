@@ -176,7 +176,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
      * @return bool
      * @throws QcEx\TableWriteException
      */
-    public function multi_query($sql)
+    public function multi_write($sql)
     {
         return $this->write($sql);
     }

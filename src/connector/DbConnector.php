@@ -90,6 +90,7 @@ class DbConnector extends DbChangeDetection
     /**
      * Write the table update times table.
      * @param array $data
+     * @return mixed
      */
     public function writeTableUpdateTimesTable($data)
     {
@@ -103,8 +104,6 @@ class DbConnector extends DbChangeDetection
             $sql .= "('$table',$update_time),";
         }
 
-        $table_update_times = $this->conn->query(rtrim($sql, ","));
-
-        return $table_update_times;
+        return $this->conn->query(rtrim($sql, ","));
     }
 }

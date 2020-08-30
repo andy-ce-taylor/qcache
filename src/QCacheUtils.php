@@ -10,6 +10,7 @@ use acet\qcache\connector as Conn;
 
 class QCacheUtils
 {
+    const CONFIG_SIG_FILE = 'config_signature.txt';
     const FOLDER_SIG_FILE = 'folder_signature.txt';
 
     /**
@@ -132,30 +133,36 @@ class QCacheUtils
         $conn->truncateTable($target_connection_sig . '_logs');
 
         // delete cache files
-        self::deletePrefixedFiles($qcache_config['qcache_folder'], $target_connection_sig);
+        self::deleteCacheFiles($qcache_config['qcache_folder'], $target_connection_sig);
     }
 
     /**
-     * Rebuild Qcache database tables if Qcache has been updated or the tables are missing.
+     * Rebuild Qcache database tables if the configuration has changed, qcache has been updated or tables are missing.
      *
      * @param string[] $db_connection_cache_data
      * @param string[] $db_connection_target_data
      * @param array    $qcache_config
      * @throws exception\ConnectionException
      */
-    public function verifyQCacheTables($db_connection_cache_data, $db_connection_target_data, $qcache_config)
+    public function verify($db_connection_cache_data, $db_connection_target_data, $qcache_config)
     {
         $target_connection_sig = Conn\DbConnector::getSignature($db_connection_target_data);
 
+        $rebuild = false;
+
         $folder_sig_file = $qcache_config['qcache_folder'] . DIRECTORY_SEPARATOR . self::FOLDER_SIG_FILE;
-
-        $folder_sig = self::detectQCacheFileChanges($folder_sig_file);
-
-        if ($folder_sig) {
-            // delete cache files
-            self::deletePrefixedFiles($qcache_config['qcache_folder'], $target_connection_sig);
+        if ($folder_sig = self::detectQCacheFileChanges($folder_sig_file)) {
+            self::deleteCacheFiles($qcache_config['qcache_folder'], $target_connection_sig);
             @unlink($folder_sig_file);
             file_put_contents($folder_sig_file, $folder_sig);
+            $rebuild = true;
+        }
+
+        $config_sig_file = $qcache_config['qcache_folder'] . DIRECTORY_SEPARATOR . self::CONFIG_SIG_FILE;
+        if ($config_sig = self::detectQCacheConfigChanges($qcache_config, $config_sig_file)) {
+            @unlink($config_sig_file);
+            file_put_contents($config_sig_file, $config_sig);
+            $rebuild = true;
         }
 
         $conn = QCache::getConnection($qcache_config, $db_connection_cache_data);
@@ -165,21 +172,21 @@ class QCacheUtils
         $sql = '';
 
         $table_name = $target_connection_sig . '_cache';
-        if ($folder_sig || !$conn->tableExists($db_name, $table_name))
+        if ($rebuild || !$conn->tableExists($db_name, $table_name))
             $sql .= $conn->getCreateTableSQL_cache($table_name);
 
         $table_name = $target_connection_sig . '_logs';
-        if ($folder_sig || !$conn->tableExists($db_name, $table_name))
+        if ($rebuild || !$conn->tableExists($db_name, $table_name))
             $sql .= $conn->getCreateTableSQL_logs($table_name);
 
         if ($conn->dbUsesCachedUpdatesTable()) {
             $table_name = $target_connection_sig . '_table_update_times';
-            if ($folder_sig || !$conn->tableExists($db_name, $table_name))
+            if ($rebuild || !$conn->tableExists($db_name, $table_name))
                 $sql .= $conn->getCreateTableSQL_table_update_times($table_name);
         }
 
         if ($sql)
-            $conn->multi_query($sql);
+            $conn->multi_write($sql);
     }
 
     /**
@@ -200,6 +207,29 @@ class QCacheUtils
 
         if ($reported_folder_sig != $folder_sig)
             return $folder_sig;
+
+        return false;
+    }
+
+    /**
+     * Detects changes to the configuration.
+     * Returns a config signature if changes are detected, otherwise FALSE.
+     *
+     * @var array  $qcache_config
+     * @var string $config_sig_file
+     * @return bool
+     */
+    private static function detectQCacheConfigChanges($qcache_config, $config_sig_file)
+    {
+        $config_sig = serialize($qcache_config);
+
+        $reported_config_sig = '';
+
+        if (file_exists($config_sig_file))
+            $reported_config_sig = file_get_contents($config_sig_file);
+
+        if ($reported_config_sig != $config_sig)
+            return $config_sig;
 
         return false;
     }
@@ -230,12 +260,12 @@ class QCacheUtils
     }
 
     /**
-     * Deletes files in the given $dir whose names start with the given $file_name_prefix.
+     * Deletes cache files in the given $dir (whose names start with the given $file_name_prefix).
      *
      * @param string $dir
      * @param string $prefix
      */
-    private static function deletePrefixedFiles($dir, $file_name_prefix)
+    private static function deleteCacheFiles($dir, $file_name_prefix)
     {
         if (!file_exists($dir))
             return;
@@ -245,24 +275,5 @@ class QCacheUtils
         foreach (array_diff(scandir($dir), ['.', '..']) as $file)
             if (substr($file, 0, $slen) == $file_name_prefix)
                 unlink($dir . DIRECTORY_SEPARATOR . $file);
-    }
-
-    /**
-     * Recursively deletes sub-folders and their contents.
-     * Also deletes the given $dir if $delete_top_dir is set.
-     *
-     * @param string $dir
-     * @param bool $delete_top_dir
-     */
-    private static function rmdir_plus($dir, $delete_top_dir=true)
-    {
-        if (!file_exists($dir))
-            return;
-
-        foreach (array_diff(scandir($dir), ['.', '..']) as $file)
-            is_dir($path = $dir.DIRECTORY_SEPARATOR.$file) ? self::rmdir_plus($path) : unlink($path);
-
-        if ($delete_top_dir)
-            rmdir($dir);
     }
 }

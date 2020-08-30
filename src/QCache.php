@@ -11,9 +11,6 @@ class QCache extends QCacheUtils
 {
     const RESULTSET_INDEX = 6;  // index of the resultset within the array stored in cache files
 
-    /** @var bool */
-    private $qcache_enabled;
-
     /** @var array */
     private $qcache_config;
 
@@ -36,16 +33,14 @@ class QCache extends QCacheUtils
      * @param array     $qcache_config
      * @param string[]  $db_connection_cache_data
      * @param string[]  $db_connection_target_data
-     * @param bool      $qcache_enabled
      * @throws QcEx\QCacheException
      */
-    function __construct($qcache_config, $db_connection_cache_data, $db_connection_target_data=[], $qcache_enabled=true)
+    function __construct($qcache_config, $db_connection_cache_data, $db_connection_target_data=[])
     {
         if (!function_exists('gzdeflate'))
             throw new QcEx\QCacheException("Please install 'ext-zlib'");
 
         $this->qcache_config = $qcache_config;
-        $this->qcache_enabled = $qcache_enabled;
 
         if (!$db_connection_target_data)
             $db_connection_target_data = $db_connection_cache_data;
@@ -72,7 +67,7 @@ class QCache extends QCacheUtils
      */
     public function query($sql, $tables = null, $description = '')
     {
-        if (!$this->qcache_enabled)
+        if (!$this->qcache_config['enabled'])
             return false;
 
         $start_nanosecs = hrtime(true);
