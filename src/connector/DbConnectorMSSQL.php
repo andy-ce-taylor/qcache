@@ -103,7 +103,8 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
                 $selector = "CONCAT(" . str_replace(',', ', " ", ', $selector) . ')';
 
             foreach ($selector_values as $val)
-                $where .= "{$selector} = '{$val}' OR ";
+//              $where .= "{$selector} = '{$val}' OR ";
+                $where .= "{$selector} = " . $this->escapeString($val) . " OR ";
 
             // get rid of final 'OR'
             $where = 'WHERE ' . substr($where, 0, -4);
