@@ -1,5 +1,9 @@
 # Change Log
 
+### 1.2.2
+- Improved exception handling.
+- DB read ops will optionally return an SqlResultSet.
+
 ### 1.2.1
 - Improvements to the db connectors.
 - Improved sanity checks.

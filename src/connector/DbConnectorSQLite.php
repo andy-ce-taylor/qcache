@@ -8,6 +8,7 @@
 namespace acet\qcache\connector;
 
 use acet\qcache\exception as QcEx;
+use acet\qcache\SqlResultSet;
 use DateTime;
 use Exception;
 use SQLite3;
@@ -135,11 +136,11 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
 
     /**
      * Process a table read request, such as SELECT, and return the response.
-     * @param string $sql
-     * @return array
-     * @throws QcEx\TableReadException
+     * @param string  $sql
+     * @param bool    $return_resultset
+     * @return SqlResultSet|array
      */
-    public function read($sql)
+    public function read($sql, $return_resultset=true)
     {
         $data = [];
 
@@ -151,7 +152,10 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
 
         $this->freeResultset($result);
 
-        return $data;
+        if (!$return_resultset)
+            return $data;
+
+        return new SqlResultSet($data);
     }
 
     /**
@@ -268,7 +272,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
     {
         $sql = "SELECT name FROM sqlite_master WHERE type='table' AND name='$table'";
 
-        return (bool)$this->read($sql);
+        return (bool)$this->read($sql, false);
     }
 
     /**

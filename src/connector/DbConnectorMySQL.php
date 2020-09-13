@@ -8,6 +8,7 @@
 namespace acet\qcache\connector;
 
 use acet\qcache\exception as QcEx;
+use acet\qcache\SqlResultSet;
 use DateTime;
 use mysqli;
 use mysqli_result;
@@ -33,7 +34,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
         );
 
         if ($this->conn->connect_errno)
-            throw new QcEx\ConnectionException("MySQL connection error: " . $this->conn->connect_errno);
+            throw new QcEx\ConnectionException("MySQL connection error: " . $this->conn->connect_error);
 
         parent::__construct($qcache_config, $db_connection_data, self::CACHED_UPDATES_TABLE);
     }
@@ -71,7 +72,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
             $sql = 'SELECT NOW()';
 
             if (($result = $this->conn->query($sql)) === false)
-                throw new QcEx\TableReadException($sql, 'mysql');
+                throw new QcEx\TableReadException($sql, 'mysql', $this->conn->error);
 
             $db_timestamp = $result->fetch_row()[0];
 
@@ -126,23 +127,27 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
 
     /**
      * Process a table read request, such as SELECT, and return the response.
-     * @param string $sql
-     * @return array
-     * @throws QcEx\TableReadException
+     * @param string  $sql
+     * @param bool    $return_resultset
+     * @return SqlResultSet|array
      */
-    public function read($sql)
+    public function read($sql, $return_resultset=true)
     {
         $data = [];
 
-        if (($result = $this->conn->query($sql)) === false)
-            throw new QcEx\TableReadException($sql, 'mysql');
+        if (($result = $this->conn->query($sql)) === false) {
+            throw new QcEx\TableReadException($sql, 'mysql', $this->conn->error);
+        }
 
         while ($row = $result->fetch_assoc())
             $data[] = $row;
 
         $this->freeResultset($result);
 
-        return $data;
+        if (!$return_resultset)
+            return $data;
+
+        return new SqlResultSet($data);
     }
 
     /**
@@ -156,7 +161,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
         $data = [];
 
         if (($result = $this->conn->query($sql)) === false)
-            throw new QcEx\TableReadException($sql, 'mysql');
+            throw new QcEx\TableReadException($sql, 'mysql', $this->conn->error);
 
         while ($row = $result->fetch_array(MYSQLI_NUM))
             $data[] = $row[0];
@@ -175,7 +180,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
     public function write($sql)
     {
         if ($this->conn->query($sql) === false)
-            throw new QcEx\TableWriteException($sql, 'mysql');
+            throw new QcEx\TableWriteException($sql, 'mysql', $this->conn->error);
 
         return true;
     }
@@ -221,7 +226,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
              WHERE TABLE_SCHEMA = '$db_name' $specific_tables_clause";
 
         if (($result = @$this->conn->query($sql)) === false)
-            throw new QcEx\TableReadException($sql, 'mysql');
+            throw new QcEx\TableReadException($sql, 'mysql', $this->conn->error);
 
         while ($row = $result->fetch_assoc()) {
             // typical mysql timestamp value: 2020-05-24 12:34:56
@@ -322,7 +327,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
         $data = [];
 
         if (($result = @$this->conn->query($sql)) === false)
-            throw new QcEx\TableReadException($sql, 'mysql');
+            throw new QcEx\TableReadException($sql, 'mysql', $this->conn->error);
 
         while ($row = $result->fetch_assoc())
             $data[] = $row['Column_name'];

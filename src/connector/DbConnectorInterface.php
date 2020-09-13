@@ -3,6 +3,7 @@
 namespace acet\qcache\connector;
 
 use acet\qcache\exception as QcEx;
+use acet\qcache\SqlResultSet;
 
 interface DbConnectorInterface
 {
@@ -46,10 +47,12 @@ interface DbConnectorInterface
     public function prepareSimpleSQL($source, $fields, $selector, $selector_values, $limit=0);
 
     /**
+     * Process a table read request, such as SELECT, and return the response.
      * @param string  $sql
-     * @return array
+     * @param bool    $return_resultset
+     * @return SqlResultSet|array
      */
-    public function read($sql);
+    public function read($sql, $return_resultset=true);
 
     /**
      * @param string  $sql

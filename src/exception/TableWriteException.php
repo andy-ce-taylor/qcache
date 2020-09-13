@@ -2,15 +2,16 @@
 
 namespace acet\qcache\exception;
 
-class TableWriteException extends QCacheException
+class TableWriteException extends TableQueryException
 {
     /**
      * TableWriteException constructor.
      * @param string $sql
      * @param string $db_type
+     * @param string $err_message
      */
-    public function __construct($sql, $db_type)
+    public function __construct($sql, $db_type, $err_message='')
     {
-        parent::__construct("[$db_type] Table write exception");
+        parent::__construct("Table write exception", $sql, $db_type, $err_message);
     }
 }

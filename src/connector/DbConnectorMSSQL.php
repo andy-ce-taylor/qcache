@@ -7,6 +7,7 @@
 namespace acet\qcache\connector;
 
 use acet\qcache\exception as QcEx;
+use acet\qcache\SqlResultSet;
 use DateTime;
 
 class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
@@ -31,8 +32,10 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
             ]
         );
 
-        if (!$this->conn)
-            throw new QcEx\ConnectionException("MSSQL connection error");
+        if (!$this->conn) {
+            $errors = sqlsrv_errors();
+            throw new QcEx\ConnectionException('MSSQL connection error "' . reset($errors)['message'] . '"');
+        }
 
         parent::__construct($qcache_config, $db_connection_data, self::CACHED_UPDATES_TABLE);
     }
@@ -97,14 +100,13 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
 
         if (!empty($selector) && !empty($selector_values)) {
 
-            $selector = "[{$selector}]";
-
-            if (strpos($selector, ',') !== false)
-                $selector = "CONCAT(" . str_replace(',', ', " ", ', $selector) . ')';
+            $selector = strpos($selector, ',') !== false
+                ? "CONCAT(" . str_replace(',', ', " ", ', $selector) . ')'
+                : $selector;
 
             foreach ($selector_values as $val)
-//              $where .= "{$selector} = '{$val}' OR ";
-                $where .= "{$selector} = " . $this->escapeString($val) . " OR ";
+                $where .= "{$selector} = '{$val}' OR ";
+//                $where .= "{$selector} = " . $this->escapeString($val) . " OR ";
 
             // get rid of final 'OR'
             $where = 'WHERE ' . substr($where, 0, -4);
@@ -117,23 +119,28 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
 
     /**
      * Process a table read request, such as SELECT, and return the response.
-     * @param string $sql
-     * @return array
-     * @throws QcEx\TableReadException
+     * @param string  $sql
+     * @param bool    $return_resultset
+     * @return SqlResultSet|array
      */
-    public function read($sql)
+    public function read($sql, $return_resultset=true)
     {
         $data = [];
 
-        if (($result = sqlsrv_query($this->conn, $sql)) === false)
-            throw new QcEx\TableReadException($sql, 'mssql');
+        if (($result = sqlsrv_query($this->conn, $sql)) === false) {
+            $errors = sqlsrv_errors();
+            throw new QcEx\TableReadException($sql, 'mssql', reset($errors)['message']);
+        }
 
         while ($row = sqlsrv_fetch_array($result, SQLSRV_FETCH_ASSOC))
             $data[] = $row;
 
         $this->freeResultset($result);
 
-        return $data;
+        if (!$return_resultset)
+            return $data;
+
+        return new SqlResultSet($data);
     }
 
     /**
@@ -146,8 +153,10 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
     {
         $data = [];
 
-        if (($result = sqlsrv_query($this->conn, $sql)) === false)
-            throw new QcEx\TableReadException($sql, 'mssql');
+        if (($result = sqlsrv_query($this->conn, $sql)) === false) {
+            $errors = sqlsrv_errors();
+            throw new QcEx\TableReadException($sql, 'mssql', reset($errors)['message']);
+        }
 
         while ($row = sqlsrv_fetch_array($result, SQLSRV_FETCH_NUMERIC))
             $data[] = $row[0];
@@ -165,8 +174,10 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
      */
     public function write($sql)
     {
-        if (sqlsrv_query($this->conn, $sql) === false)
-            throw new QcEx\TableWriteException($sql, 'mssql');
+        if (sqlsrv_query($this->conn, $sql) === false) {
+            $errors = sqlsrv_errors();
+            throw new QcEx\TableWriteException($sql, 'mssql', reset($errors)['message']);
+        }
 
         return true;
     }
@@ -216,8 +227,10 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
              FROM sys.dm_db_index_usage_stats
              WHERE database_id = DB_ID('$db_name') $specific_tables_clause";
 
-        if (($stmt = sqlsrv_query($this->conn, $sql)) === false)
-            throw new QcEx\TableReadException($sql, 'mssql');
+        if (($stmt = sqlsrv_query($this->conn, $sql)) === false) {
+            $errors = sqlsrv_errors();
+            throw new QcEx\TableReadException($sql, 'mssql', reset($errors)['message']);
+        }
 
         $current_timestamp = (int)(new DateTime($this->getCurrentTimestamp()))->format('U');
 
@@ -257,8 +270,10 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
     {
         $sql = "SELECT sqlserver_start_time FROM sys.dm_os_sys_info";
 
-        if (($result = sqlsrv_query($this->conn, $sql)) === false)
-            throw new QcEx\TableReadException($sql, 'mssql');
+        if (($result = sqlsrv_query($this->conn, $sql)) === false) {
+            $errors = sqlsrv_errors();
+            throw new QcEx\TableReadException($sql, 'mssql', reset($errors)['message']);
+        }
 
         $this->freeResultset($result);
 
@@ -273,8 +288,10 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
     {
         $sql = "SELECT CURRENT_TIMESTAMP AS [CURRENT_TIMESTAMP]";
 
-        if (($result = sqlsrv_query($this->conn, $sql)) === false)
-            throw new QcEx\TableReadException($sql, 'mssql');
+        if (($result = sqlsrv_query($this->conn, $sql)) === false) {
+            $errors = sqlsrv_errors();
+            throw new QcEx\TableReadException($sql, 'mssql', reset($errors)['message']);
+        }
 
         $this->freeResultset($result);
 
@@ -308,7 +325,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
              WHERE TABLE_SCHEMA='$schema'
              AND TABLE_NAME='$table'";
 
-        return (bool)$this->read($sql);
+        return (bool)$this->read($sql, false);
     }
 
     /**
@@ -390,8 +407,10 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
 
         $data = [];
 
-        if (($result = sqlsrv_query($this->conn, $sql)) === false)
-            throw new QcEx\TableReadException($sql, 'mssql');
+        if (($result = sqlsrv_query($this->conn, $sql)) === false) {
+            $errors = sqlsrv_errors();
+            throw new QcEx\TableReadException($sql, 'mssql', reset($errors)['message']);
+        }
 
         while ($row = sqlsrv_fetch_array($result, SQLSRV_FETCH_ASSOC))
             $data[] = $row['column_name'];

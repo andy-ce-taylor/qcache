@@ -80,7 +80,7 @@ class QCache extends QCacheUtils
 
         $cache_file = $this->qcache_config['qcache_folder'] . DIRECTORY_SEPARATOR . "$this->target_connection_sig#$hash.dat";
 
-        if ($data = $this->db_connection_cache->read($sql_get_cache)) { // from database
+        if ($data = $this->db_connection_cache->read($sql_get_cache, false)) { // from database
             $data[0]['resultset'] = unserialize(gzinflate($data[0]['resultset']));
             $cached_data = array_values($data[0]);
             $from_db = true;
@@ -100,7 +100,7 @@ class QCache extends QCacheUtils
 
                 // perform a fresh query and update cache
                 $start_nanosecs = hrtime(true); // restart nanosecond timer
-                $resultset = new SqlResultSet($this->db_connection_target->read($sql));
+                $resultset = $this->db_connection_target->read($sql, true);
                 $elapsed_nanosecs = hrtime(true) - $start_nanosecs;
 
                 $av_nanosecs = (float)($elapsed_nanosecs + $av_nanosecs * $impressions++) / $impressions;
@@ -162,7 +162,7 @@ class QCache extends QCacheUtils
         $tables_csv = is_array($tables) ? implode(',', $tables) : $tables;
 
         $start_nanosecs = hrtime(true); // restart nanosecond timer
-        $resultset = new SqlResultSet($this->db_connection_target->read($sql));
+        $resultset = $this->db_connection_target->read($sql, true);
         $elapsed_nanosecs = hrtime(true) - $start_nanosecs;
 
         $resultset_gz = gzdeflate(serialize($resultset), $this->qcache_config['gz_compression_level']);
