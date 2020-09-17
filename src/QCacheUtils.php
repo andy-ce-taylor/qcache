@@ -167,6 +167,8 @@ class QCacheUtils
 
         $cache_conn = QCache::getConnection($qcache_config, $db_connection_cache);
 
+//echo "<pre>"; var_dump($cache_conn); echo "</pre>";
+
         $db_name = $db_connection_cache['name'];
 
         foreach ($target_db_connectors as $sig => $connector) {
@@ -189,8 +191,8 @@ class QCacheUtils
                     $sql .= $cache_conn->getCreateTableSQL_table_update_times($table_name);
             }
 
-            if ($sql)
-                $cache_conn->multi_write($sql);
+//            if ($sql)
+//                $cache_conn->multi_write($sql);
         }
     }
 

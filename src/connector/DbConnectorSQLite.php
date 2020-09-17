@@ -56,7 +56,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
 //              }
 
             } catch (Exception $ex) {
-                throw new QcEx\ConnectionException(self::SERVER_NAME);
+                throw new QcEx\ConnectionException(self::SERVER_NAME, $db_connection_data['name']);
             }
         }
 
@@ -96,7 +96,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
             $sql = "SELECT datetime('now', 'localtime')";
 
             if (($result = @$this->conn->query($sql)) === false)
-                throw new QcEx\TableReadException($sql, self::SERVER_NAME);
+                throw new QcEx\TableReadException('datetime', $sql, self::SERVER_NAME);
 
             $db_timestamp = $result->fetchArray(SQLITE3_ASSOC);
 
@@ -159,7 +159,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
         $data = [];
 
         if (($result = @$this->conn->query($sql)) === false)
-            throw new QcEx\TableReadException($sql, self::SERVER_NAME);
+            throw new QcEx\TableReadException('', $sql, self::SERVER_NAME);
 
         while ($row = $result->fetchArray(SQLITE3_ASSOC))
             $data[] = $row;
@@ -183,7 +183,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
         $data = [];
 
         if (($result = @$this->conn->query($sql)) === false)
-            throw new QcEx\TableReadException($sql, self::SERVER_NAME);
+            throw new QcEx\TableReadException('', $sql, self::SERVER_NAME);
 
         while ($row = $result->fetchArray(SQLITE3_NUM))
             $data[] = $row[0];
@@ -202,7 +202,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
     public function write($sql)
     {
         if (@$this->conn->exec($sql) === false)
-            throw new QcEx\TableWriteException($sql, self::SERVER_NAME);
+            throw new QcEx\TableWriteException('', $sql, self::SERVER_NAME);
 
         return true;
     }
@@ -248,7 +248,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
              ORDER BY name;";
 
         if (($result = @$this->conn->query($sql)) === false)
-            throw new QcEx\TableReadException($sql, self::SERVER_NAME);
+            throw new QcEx\TableReadException('sqlite_master', $sql, self::SERVER_NAME);
 
         while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
             // typical sqlite timestamp value: 2020-05-24 12:34:56
@@ -352,7 +352,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
         $data = [];
 
         if (($result = @$this->conn->query($sql)) === false)
-            throw new QcEx\TableReadException($sql, self::SERVER_NAME);
+            throw new QcEx\TableReadException($table, $sql, self::SERVER_NAME);
 
         while ($row = $result->fetchArray(SQLITE3_ASSOC))
             $data[] = $row['Column_name'];
