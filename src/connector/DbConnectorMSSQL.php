@@ -12,6 +12,7 @@ use DateTime;
 
 class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
 {
+    const SERVER_NAME = 'Microsoft Server';
     const CACHED_UPDATES_TABLE = true;
 
     /**
@@ -23,18 +24,29 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
      */
     function __construct($qcache_config, $db_connection_data)
     {
-        $this->conn = sqlsrv_connect(
-            $db_connection_data['host'],
-            [
-                'Database'  => $db_connection_data['name'],
-                'UID'       => $db_connection_data['user'],
-                'PWD'       => $db_connection_data['pass']
-            ]
-        );
+        static $_connection = [];
 
-        if (!$this->conn) {
-            $errors = sqlsrv_errors();
-            throw new QcEx\ConnectionException('MSSQL connection error "' . reset($errors)['message'] . '"');
+        $key = implode(':', $db_connection_data);
+
+        if (array_key_exists($key, $_connection)) {
+            if (!$_connection[$key])
+                throw new QcEx\ConnectionException(self::SERVER_NAME);
+
+            $this->conn = $_connection[$key];
+        }
+        else {
+            $_connection[$key] = $this->conn = sqlsrv_connect(
+                $db_connection_data['host'],
+                [   'Database' => $db_connection_data['name'],
+                    'UID' => $db_connection_data['user'],
+                    'PWD' => $db_connection_data['pass']
+                ]
+            );
+
+            if (!$this->conn) {
+                $_connection_ok[$key] = false;
+                throw new QcEx\ConnectionException(self::SERVER_NAME);
+            }
         }
 
         parent::__construct($qcache_config, $db_connection_data, self::CACHED_UPDATES_TABLE);
@@ -129,7 +141,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
 
         if (($result = sqlsrv_query($this->conn, $sql)) === false) {
             $errors = sqlsrv_errors();
-            throw new QcEx\TableReadException($sql, 'mssql', reset($errors)['message']);
+            throw new QcEx\TableReadException('', $sql, self::SERVER_NAME, reset($errors)['message']);
         }
 
         while ($row = sqlsrv_fetch_array($result, SQLSRV_FETCH_ASSOC))
@@ -155,7 +167,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
 
         if (($result = sqlsrv_query($this->conn, $sql)) === false) {
             $errors = sqlsrv_errors();
-            throw new QcEx\TableReadException($sql, 'mssql', reset($errors)['message']);
+            throw new QcEx\TableReadException('', $sql, self::SERVER_NAME, reset($errors)['message']);
         }
 
         while ($row = sqlsrv_fetch_array($result, SQLSRV_FETCH_NUMERIC))
@@ -176,7 +188,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
     {
         if (sqlsrv_query($this->conn, $sql) === false) {
             $errors = sqlsrv_errors();
-            throw new QcEx\TableWriteException($sql, 'mssql', reset($errors)['message']);
+            throw new QcEx\TableWriteException('', $sql, self::SERVER_NAME, reset($errors)['message']);
         }
 
         return true;
@@ -209,14 +221,14 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
      * equivalent MySQL method, this table is reset whenever MSSQL restarts. For this
      * reason, a file is used to cache the latest table change times.
      *
-     * @param mixed $cache_db
+     * @param mixed $db_connection_cache
      * @param string[]|null $tables
      * @return int[]|false
      * @throws QcEx\TableReadException
      */
-    public function getTableTimes($cache_db, $tables=null)
+    public function getTableTimes($db_connection_cache, $tables=null)
     {
-        $table_update_times = $cache_db->readTableUpdateTimesTable();
+        $table_update_times = $this->readTableUpdateTimesTable();
 
         $specific_tables_clause = $tables ? "AND OBJECT_ID IN (OBJECT_ID('".implode("'),OBJECT_ID('", $tables)."'))" : '';
 
@@ -229,7 +241,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
 
         if (($stmt = sqlsrv_query($this->conn, $sql)) === false) {
             $errors = sqlsrv_errors();
-            throw new QcEx\TableReadException($sql, 'mssql', reset($errors)['message']);
+            throw new QcEx\TableReadException('sys.dm_db_index_usage_stats', $sql, self::SERVER_NAME, reset($errors)['message']);
         }
 
         $current_timestamp = (int)(new DateTime($this->getCurrentTimestamp()))->format('U');
@@ -255,11 +267,35 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
             $table_update_times[$table_name] = $timestamp;
         }
 
-        $cache_db->writeTableUpdateTimesTable($table_update_times);
+        $db_connection_cache->writeTableUpdateTimesTable($table_update_times);
 
         $this->freeResultset($stmt);
 
         return $table_update_times;
+    }
+
+    /**
+     * Returns TRUE if it is possible to read table change times.
+     * Throws an exception if there are permission problems.
+     *
+     * @return true
+     * @throws QcEx\TableReadException
+     */
+    public function verifyGetTableTimes()
+    {
+        $db_name = $this->getDbName();
+
+        $sql =
+            "SELECT OBJECT_NAME(OBJECT_ID) AS TableName, last_user_update
+             FROM sys.dm_db_index_usage_stats
+             WHERE database_id = DB_ID('$db_name')";
+
+        if (($stmt = sqlsrv_query($this->conn, $sql)) === false) {
+            $errors = sqlsrv_errors();
+            throw new QcEx\TableReadException('sys.dm_db_index_usage_stats', $sql, self::SERVER_NAME, reset($errors)['message']);
+        }
+
+        return true;
     }
 
     /**
@@ -272,7 +308,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
 
         if (($result = sqlsrv_query($this->conn, $sql)) === false) {
             $errors = sqlsrv_errors();
-            throw new QcEx\TableReadException($sql, 'mssql', reset($errors)['message']);
+            throw new QcEx\TableReadException('sys.dm_os_sys_info', $sql, self::SERVER_NAME, reset($errors)['message']);
         }
 
         $this->freeResultset($result);
@@ -290,7 +326,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
 
         if (($result = sqlsrv_query($this->conn, $sql)) === false) {
             $errors = sqlsrv_errors();
-            throw new QcEx\TableReadException($sql, 'mssql', reset($errors)['message']);
+            throw new QcEx\TableReadException('CURRENT_TIMESTAMP', $sql, self::SERVER_NAME, reset($errors)['message']);
         }
 
         $this->freeResultset($result);
@@ -307,7 +343,15 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
      */
     public function truncateTable($table)
     {
-        return $this->write("TRUNCATE TABLE $table");
+        $sql = "TRUNCATE TABLE $table";
+        try {
+
+            return $this->write($sql);
+
+        } catch (QcEx\TableWriteException $ex) {
+            $errors = sqlsrv_errors();
+            throw new QcEx\TableWriteException($table, $sql, self::SERVER_NAME, reset($errors)['message']);
+        }
     }
 
     /**
@@ -321,11 +365,16 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
     public function tableExists($schema, $table)
     {
         $sql =
-            "SELECT * FROM INFORMATION_SCHEMA.TABLES 
+            "SELECT * FROM information_schema.tables 
              WHERE TABLE_SCHEMA='$schema'
              AND TABLE_NAME='$table'";
 
-        return (bool)$this->read($sql, false);
+        try {
+            return (bool)$this->read($sql, false);
+        } catch (QcEx\TableReadException $ex) {
+            $errors = sqlsrv_errors();
+            throw new QcEx\TableReadException('information_schema.tables', $sql, self::SERVER_NAME, reset($errors)['message']);
+        }
     }
 
     /**
@@ -346,7 +395,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
                     script          VARCHAR(4000)   DEFAULT NULL,
                     av_nanosecs     FLOAT           DEFAULT NULL,
                     impressions     INT             DEFAULT NULL,
-                    description     VARCHAR(200)    DEFAULT NULL,
+                    description     VARCHAR(500)    DEFAULT NULL,
                     tables_csv      VARCHAR(1000)   DEFAULT NULL,
                     resultset       VARCHAR({$this->qcache_config['max_db_resultset_size']})
                 );";
@@ -398,8 +447,8 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
     public function getPrimary($table)
     {
         $sql = "SELECT KU.table_name as TABLENAME, column_name as PRIMARYKEYCOLUMN
-                FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS TC 
-                INNER JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS KU
+                FROM information_schema.table_constraints AS TC 
+                INNER JOIN information_schema.key_column_usage AS KU
                     ON TC.CONSTRAINT_TYPE = 'PRIMARY KEY' 
                     AND TC.CONSTRAINT_NAME = KU.CONSTRAINT_NAME 
                     AND KU.table_name='$table'
@@ -409,7 +458,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
 
         if (($result = sqlsrv_query($this->conn, $sql)) === false) {
             $errors = sqlsrv_errors();
-            throw new QcEx\TableReadException($sql, 'mssql', reset($errors)['message']);
+            throw new QcEx\TableReadException('information_schema', $sql, self::SERVER_NAME, reset($errors)['message']);
         }
 
         while ($row = sqlsrv_fetch_array($result, SQLSRV_FETCH_ASSOC))
@@ -434,7 +483,13 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
 
         if (!isset($table_names[$db_name])) {
             $sql = "SELECT table_name FROM information_schema.tables WHERE TABLE_CATALOG LIKE '$db_name'";
-            $table_names[$db_name] = $this->readCol($sql);
+           
+            try {
+                $table_names[$db_name] = $this->readCol($sql);
+            } catch (QcEx\TableReadException $ex) {
+                $errors = sqlsrv_errors();
+                throw new QcEx\TableReadException('information_schema', $sql, self::SERVER_NAME, reset($errors)['message']);
+            }
         }
 
         return $table_names[$db_name];
@@ -449,7 +504,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
     {
         return $this->readCol(
             "SELECT COLUMN_NAME, * 
-             FROM INFORMATION_SCHEMA.COLUMNS
+             FROM information_schema.columns
              WHERE TABLE_SCHEMA='dbo' AND TABLE_NAME='$table'"
         );
     }

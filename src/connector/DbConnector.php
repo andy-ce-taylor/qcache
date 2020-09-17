@@ -7,6 +7,7 @@
 
 namespace acet\qcache\connector;
 
+use acet\qcache\SqlResultSet;
 use DateTime;
 use mysqli;
 use SQLite3;
@@ -28,6 +29,9 @@ class DbConnector extends DbChangeDetection
     /** @var string */
     private $updates_table = '';
 
+    /** @var bool */
+    private $enabled = true;
+
     /**
      * DbConnector constructor.
      *
@@ -43,13 +47,14 @@ class DbConnector extends DbChangeDetection
         $this->db_uses_cached_updates_table = $cached_updates_table;
 
         if ($cached_updates_table)
-            $this->updates_table = self::getSignature($db_connection_data) . '_table_update_times';
+            $this->updates_table = self::getConnectorSignature($db_connection_data) . '_table_update_times';
     }
 
     // Getters
 
     public    function getConnection()                  { return $this->conn; }
     public    function dbUsesCachedUpdatesTable()       { return $this->db_uses_cached_updates_table; }
+    public    function isEnabled()                      { return $this->enabled; }
     protected function getDbName()                      { return $this->db_name; }
     protected function getTableUpdateTimesTableName()   { return $this->updates_table; }
 
@@ -59,29 +64,36 @@ class DbConnector extends DbChangeDetection
      * @param string[] $db_connection
      * @return string
      */
-    public static function getSignature($db_connection)
+    public static function getConnectorSignature($db_connection)
     {
-        $type = strtolower($db_connection['type']);
-        $prefix = $type == 'mssql' ? 'dbo.' : '';
-        $sig = "{$prefix}{$type}_{$db_connection['host']}_{$db_connection['name']}";
+        $sig = "{$db_connection['type']}_{$db_connection['host']}_{$db_connection['name']}";
 
-        return $prefix . $sig;
+        return preg_replace("/[^a-zA-Z0-9_]+/", "", strtolower($sig));
     }
 
-    // Universal scripts
+    /**
+     * @param bool $enable
+     */
+    public function enable($enable)
+    {
+        // ToDo: store disabled connectors in nv location so that it can be remembered
+        $this->enabled = $enable;
+    }
 
     /**
      * Read the table update times table.
+     * @param DbConnector $db_connection_cache
      * @return array
      */
-    public function readTableUpdateTimesTable()
+    public function readTableUpdateTimesTable($db_connection_cache)
     {
         $table_update_times_table = $this->getTableUpdateTimesTableName();
 
         $table_update_times = [];
 
-        if ($rows = $this->read("SELECT * FROM $table_update_times_table"))
-            foreach ($rows as $row)
+        /** @var SqlResultSet[] $rows */
+        if ($rows = $db_connection_cache->read("SELECT * FROM $table_update_times_table"))
+            while ($row = $rows->fetch_assoc())
                 $table_update_times[$row['name']] = $row['update_time'];
 
         return $table_update_times;

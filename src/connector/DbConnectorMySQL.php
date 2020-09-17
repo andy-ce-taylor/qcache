@@ -11,10 +11,13 @@ use acet\qcache\exception as QcEx;
 use acet\qcache\SqlResultSet;
 use DateTime;
 use mysqli;
+use mysqli_driver;
 use mysqli_result;
+use mysqli_sql_exception;
 
 class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
 {
+    const SERVER_NAME = 'MySQL';
     const CACHED_UPDATES_TABLE = false;
 
     /**
@@ -26,15 +29,33 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      */
     function __construct($qcache_config, $db_connection_data)
     {
-        $this->conn = new mysqli(
-            $db_connection_data['host'],
-            $db_connection_data['user'],
-            $db_connection_data['pass'],
-            $db_connection_data['name']
-        );
+        static $_connection = [];
 
-        if ($this->conn->connect_errno)
-            throw new QcEx\ConnectionException("MySQL connection error: " . $this->conn->connect_error);
+        $key = implode(':', $db_connection_data);
+
+        if (array_key_exists($key, $_connection)) {
+            if (!$_connection[$key])
+                throw new QcEx\ConnectionException(self::SERVER_NAME);
+
+            $this->conn = $_connection[$key];
+        }
+        else {
+            $driver = new mysqli_driver();
+            $driver->report_mode = MYSQLI_REPORT_STRICT;
+
+            try {
+                $_connection[$key] = $this->conn = @new mysqli(
+                    $db_connection_data['host'],
+                    $db_connection_data['user'],
+                    $db_connection_data['pass'],
+                    $db_connection_data['name']
+                );
+            }
+            catch (mysqli_sql_exception $ex) {
+                $_connection_ok[$key] = false;
+                throw new QcEx\ConnectionException(self::SERVER_NAME);
+            }
+        }
 
         parent::__construct($qcache_config, $db_connection_data, self::CACHED_UPDATES_TABLE);
     }
@@ -72,7 +93,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
             $sql = 'SELECT NOW()';
 
             if (($result = $this->conn->query($sql)) === false)
-                throw new QcEx\TableReadException($sql, 'mysql', $this->conn->error);
+                throw new QcEx\TableReadException($sql, self::SERVER_NAME, $this->conn->error);
 
             $db_timestamp = $result->fetch_row()[0];
 
@@ -136,7 +157,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
         $data = [];
 
         if (($result = $this->conn->query($sql)) === false) {
-            throw new QcEx\TableReadException($sql, 'mysql', $this->conn->error);
+            throw new QcEx\TableReadException($sql, self::SERVER_NAME, $this->conn->error);
         }
 
         while ($row = $result->fetch_assoc())
@@ -161,12 +182,10 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
         $data = [];
 
         if (($result = $this->conn->query($sql)) === false)
-            throw new QcEx\TableReadException($sql, 'mysql', $this->conn->error);
+            throw new QcEx\TableReadException($sql, self::SERVER_NAME, $this->conn->error);
 
         while ($row = $result->fetch_array(MYSQLI_NUM))
             $data[] = $row[0];
-
-        $this->freeResultset($result);
 
         return $data;
     }
@@ -180,7 +199,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
     public function write($sql)
     {
         if ($this->conn->query($sql) === false)
-            throw new QcEx\TableWriteException($sql, 'mysql', $this->conn->error);
+            throw new QcEx\TableWriteException($sql, self::SERVER_NAME, $this->conn->error);
 
         return true;
     }
@@ -199,22 +218,25 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
     /**
      * @param mysqli_result $resultset
      * @return bool
+     * @throws mysqli_sql_exception
      */
     public function freeResultset($resultset)
     {
-        $resultset->free_result();
+        if ($resultset->num_rows)
+            $resultset->free_result();
+
         return true;
     }
 
     /**
      * Returns the change times for the given tables.
      *
-     * @param mixed $cache_db
+     * @param mixed $db_connection_cache
      * @param string[]|null $tables
      * @return int[]|false
      * @throws QcEx\TableReadException
      */
-    public function getTableTimes($cache_db, $tables=null)
+    public function getTableTimes($db_connection_cache, $tables=null)
     {
         $specific_tables_clause = $tables ? "AND TABLE_NAME IN ('" . implode("','", $tables) . "')" : '';
 
@@ -226,7 +248,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
              WHERE TABLE_SCHEMA = '$db_name' $specific_tables_clause";
 
         if (($result = @$this->conn->query($sql)) === false)
-            throw new QcEx\TableReadException($sql, 'mysql', $this->conn->error);
+            throw new QcEx\TableReadException($sql, self::SERVER_NAME, $this->conn->error);
 
         while ($row = $result->fetch_assoc()) {
             // typical mysql timestamp value: 2020-05-24 12:34:56
@@ -278,7 +300,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
                     script          VARCHAR(4000)   DEFAULT NULL,
                     av_nanosecs     FLOAT           DEFAULT NULL,
                     impressions     INT(11)         DEFAULT NULL,
-                    description     VARCHAR(200)    DEFAULT NULL,
+                    description     VARCHAR(500)    DEFAULT NULL,
                     tables_csv      VARCHAR(1000)   DEFAULT NULL,
                     resultset       VARCHAR({$this->qcache_config['max_db_resultset_size']})
                 );";
@@ -327,7 +349,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
         $data = [];
 
         if (($result = @$this->conn->query($sql)) === false)
-            throw new QcEx\TableReadException($sql, 'mysql', $this->conn->error);
+            throw new QcEx\TableReadException($sql, self::SERVER_NAME, $this->conn->error);
 
         while ($row = $result->fetch_assoc())
             $data[] = $row['Column_name'];

@@ -16,6 +16,7 @@ use SQLite3Result;
 
 class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
 {
+    const SERVER_NAME = 'SQLite3';
     const CACHED_UPDATES_TABLE = false;
 
     /**
@@ -27,24 +28,36 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
      */
     function __construct($qcache_config, $db_connection_data)
     {
-        try {
+        static $_connection = [];
 
-            $this->conn = new SQLite3(
-                $db_connection_data['name'],
-                SQLITE3_OPEN_READWRITE | SQLITE3_OPEN_CREATE,
-                $db_connection_data['pass']
-            );
+        $key = implode(':', $db_connection_data);
 
-            $this->conn->exec('PRAGMA temp_store = MEMORY');
+        if (array_key_exists($key, $_connection)) {
+            if (!$_connection[$key])
+                throw new QcEx\ConnectionException(self::SERVER_NAME);
 
-//          $dir = $qcache_config['qcache_folder'];
-//          if (substr($db_connection_data['name'], 0, strlen($dir)) == $dir) {
-//              $this->conn->exec('PRAGMA synchronous = OFF');
-//              $this->conn->exec('PRAGMA journal_mode = OFF');
-//          }
+            $this->conn = $_connection[$key];
+        }
+        else {
+            try {
 
-        } catch (Exception $ex) {
-            throw new QcEx\ConnectionException("SQLite connection error: ".$ex->getMessage());
+                $_connection[$key] = $this->conn = new SQLite3(
+                    $db_connection_data['name'],
+                    SQLITE3_OPEN_READWRITE | SQLITE3_OPEN_CREATE,
+                    $db_connection_data['pass']
+                );
+
+                $this->conn->exec('PRAGMA temp_store = MEMORY');
+
+//              $dir = $qcache_config['qcache_folder'];
+//              if (substr($db_connection_data['name'], 0, strlen($dir)) == $dir) {
+//                  $this->conn->exec('PRAGMA synchronous = OFF');
+//                  $this->conn->exec('PRAGMA journal_mode = OFF');
+//              }
+
+            } catch (Exception $ex) {
+                throw new QcEx\ConnectionException(self::SERVER_NAME);
+            }
         }
 
         parent::__construct($qcache_config, $db_connection_data, self::CACHED_UPDATES_TABLE);
@@ -83,7 +96,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
             $sql = "SELECT datetime('now', 'localtime')";
 
             if (($result = @$this->conn->query($sql)) === false)
-                throw new QcEx\TableReadException($sql, 'sqlite');
+                throw new QcEx\TableReadException($sql, self::SERVER_NAME);
 
             $db_timestamp = $result->fetchArray(SQLITE3_ASSOC);
 
@@ -136,16 +149,17 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
 
     /**
      * Process a table read request, such as SELECT, and return the response.
-     * @param string  $sql
-     * @param bool    $return_resultset
+     * @param string $sql
+     * @param bool $return_resultset
      * @return SqlResultSet|array
+     * @throws QcEx\TableReadException
      */
     public function read($sql, $return_resultset=true)
     {
         $data = [];
 
         if (($result = @$this->conn->query($sql)) === false)
-            throw new QcEx\TableReadException($sql, 'sqlite');
+            throw new QcEx\TableReadException($sql, self::SERVER_NAME);
 
         while ($row = $result->fetchArray(SQLITE3_ASSOC))
             $data[] = $row;
@@ -169,7 +183,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
         $data = [];
 
         if (($result = @$this->conn->query($sql)) === false)
-            throw new QcEx\TableReadException($sql, 'sqlite');
+            throw new QcEx\TableReadException($sql, self::SERVER_NAME);
 
         while ($row = $result->fetchArray(SQLITE3_NUM))
             $data[] = $row[0];
@@ -188,7 +202,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
     public function write($sql)
     {
         if (@$this->conn->exec($sql) === false)
-            throw new QcEx\TableWriteException($sql, 'sqlite');
+            throw new QcEx\TableWriteException($sql, self::SERVER_NAME);
 
         return true;
     }
@@ -219,12 +233,12 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
     /**
      * Returns the change times for the given tables.
      *
-     * @param mixed $cache_db
+     * @param mixed $db_connection_cache
      * @param string[]|null $tables
      * @return int[]|false
      * @throws QcEx\TableReadException
      */
-    public function getTableTimes($cache_db, $tables=null)
+    public function getTableTimes($db_connection_cache, $tables=null)
     {
         $specific_tables_clause = $tables ? "AND name IN ('" . implode("','", $tables) . "')" : '';
 
@@ -234,7 +248,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
              ORDER BY name;";
 
         if (($result = @$this->conn->query($sql)) === false)
-            throw new QcEx\TableReadException($sql, 'sqlite');
+            throw new QcEx\TableReadException($sql, self::SERVER_NAME);
 
         while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
             // typical sqlite timestamp value: 2020-05-24 12:34:56
@@ -289,7 +303,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
                     script          VARCHAR(4000)   DEFAULT NULL,
                     av_nanosecs     REAL            DEFAULT NULL,
                     impressions     INT(11)         DEFAULT NULL,
-                    description     VARCHAR(200)    DEFAULT NULL,
+                    description     VARCHAR(500)    DEFAULT NULL,
                     tables_csv      VARCHAR(1000)   DEFAULT NULL,
                     resultset       VARCHAR({$this->qcache_config['max_db_resultset_size']})
                 );";
@@ -338,7 +352,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
         $data = [];
 
         if (($result = @$this->conn->query($sql)) === false)
-            throw new QcEx\TableReadException($sql, 'sqlite');
+            throw new QcEx\TableReadException($sql, self::SERVER_NAME);
 
         while ($row = $result->fetchArray(SQLITE3_ASSOC))
             $data[] = $row['Column_name'];

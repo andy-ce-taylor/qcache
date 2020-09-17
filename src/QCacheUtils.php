@@ -34,7 +34,7 @@ class QCacheUtils
      * @param string $sql
      * @return bool
      */
-    public function cacheable($sql)
+    public static function cacheable($sql)
     {
         static $cacheable_l1c = [];
 
@@ -118,41 +118,41 @@ class QCacheUtils
     /**
      * Removes cache records.
      *
-     * @param array    $qcache_config
-     * @param string[] $db_connection_cache_data
-     * @param string[] $db_connection_target_data
-     * @param string   $qcache_folder
+     * @param string[]  $db_connection_cache
+     * @param string[]  $target_db_connector_sigs
+     * @param array     $qcache_config
      */
-    public function clearCache($qcache_config, $db_connection_cache_data, $db_connection_target_data)
+    public function clearCache($db_connection_cache, $target_db_connector_sigs, $qcache_config)
     {
-        $conn = QCache::getConnection($qcache_config, $db_connection_cache_data);
+        $cache_conn = QCache::getConnection($qcache_config, $db_connection_cache);
 
-        $target_connection_sig = Conn\DbConnector::getSignature($db_connection_target_data);
-
-        $conn->truncateTable($target_connection_sig . '_cache');
-        $conn->truncateTable($target_connection_sig . '_logs');
-
-        // delete cache files
-        self::deleteCacheFiles($qcache_config['qcache_folder'], $target_connection_sig);
+        foreach ($target_db_connector_sigs as $sig) {
+            $cache_conn->truncateTable($sig . '_cache');
+            $cache_conn->truncateTable($sig . '_logs');
+            $this->deleteCacheFiles($qcache_config['qcache_folder'], $sig);
+        }
     }
 
     /**
      * Rebuild Qcache database tables if the configuration has changed, qcache has been updated or tables are missing.
      *
-     * @param string[] $db_connection_cache_data
-     * @param string[] $db_connection_target_data
-     * @param array    $qcache_config
+     * @param string[]   $db_connection_cache
+     * @param string[][] $target_db_connectors
+     * @param array      $qcache_config
      * @throws exception\ConnectionException
      */
-    public function verify($db_connection_cache_data, $db_connection_target_data, $qcache_config)
+    public function verify($db_connection_cache, $target_db_connectors, $qcache_config)
     {
-        $target_connection_sig = Conn\DbConnector::getSignature($db_connection_target_data);
-
         $rebuild = false;
 
+        $target_db_connector_sigs = array_keys($target_db_connectors);
+
         $folder_sig_file = $qcache_config['qcache_folder'] . DIRECTORY_SEPARATOR . self::FOLDER_SIG_FILE;
-        if ($folder_sig = self::detectQCacheFileChanges($folder_sig_file)) {
-            self::deleteCacheFiles($qcache_config['qcache_folder'], $target_connection_sig);
+        if ($folder_sig = self::detectQCacheSourceFileChanges($folder_sig_file)) {
+
+            foreach ($target_db_connector_sigs as $sig)
+                self::deleteCacheFiles($qcache_config['qcache_folder'], $sig);
+
             @unlink($folder_sig_file);
             file_put_contents($folder_sig_file, $folder_sig);
             $rebuild = true;
@@ -165,28 +165,33 @@ class QCacheUtils
             $rebuild = true;
         }
 
-        $conn = QCache::getConnection($qcache_config, $db_connection_cache_data);
+        $cache_conn = QCache::getConnection($qcache_config, $db_connection_cache);
 
-        $db_name = $db_connection_cache_data['name'];
+        $db_name = $db_connection_cache['name'];
 
-        $sql = '';
+        foreach ($target_db_connectors as $sig => $connector) {
 
-        $table_name = $target_connection_sig . '_cache';
-        if ($rebuild || !$conn->tableExists($db_name, $table_name))
-            $sql .= $conn->getCreateTableSQL_cache($table_name);
+            $sql = '';
 
-        $table_name = $target_connection_sig . '_logs';
-        if ($rebuild || !$conn->tableExists($db_name, $table_name))
-            $sql .= $conn->getCreateTableSQL_logs($table_name);
+            $table_name = $sig . '_cache';
+            if ($rebuild || !$cache_conn->tableExists($db_name, $table_name))
+                $sql .= $cache_conn->getCreateTableSQL_cache($table_name);
 
-        if ($conn->dbUsesCachedUpdatesTable()) {
-            $table_name = $target_connection_sig . '_table_update_times';
-            if ($rebuild || !$conn->tableExists($db_name, $table_name))
-                $sql .= $conn->getCreateTableSQL_table_update_times($table_name);
+            $table_name = $sig . '_logs';
+            if ($rebuild || !$cache_conn->tableExists($db_name, $table_name))
+                $sql .= $cache_conn->getCreateTableSQL_logs($table_name);
+
+            $target_conn = QCache::getConnection($qcache_config, $connector);
+
+            if ($target_conn->dbUsesCachedUpdatesTable()) {
+                $table_name = $sig .'_table_update_times';
+                if ($rebuild || !$cache_conn->tableExists($db_name, $table_name))
+                    $sql .= $cache_conn->getCreateTableSQL_table_update_times($table_name);
+            }
+
+            if ($sql)
+                $cache_conn->multi_write($sql);
         }
-
-        if ($sql)
-            $conn->multi_write($sql);
     }
 
     /**
@@ -196,7 +201,7 @@ class QCacheUtils
      * @var string $folder_sig_file
      * @return bool
      */
-    private static function detectQCacheFileChanges($folder_sig_file)
+    private static function detectQCacheSourceFileChanges($folder_sig_file)
     {
         $folder_sig = self::getFolderSignature(realpath(__DIR__ . DIRECTORY_SEPARATOR . '..'));
 

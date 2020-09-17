@@ -6,10 +6,10 @@ class ConnectionException extends QCacheException
 {
     /**
      * ConnectionException constructor.
-     * @param string $message
+     * @param string $db_type
      */
-    public function __construct($message="")
+    public function __construct($db_type)
     {
-        parent::__construct("Connection exception: $message");
+        parent::__construct("Unable to open $db_type connection");
     }
 }

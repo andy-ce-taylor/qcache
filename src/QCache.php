@@ -30,28 +30,28 @@ class QCache extends QCacheUtils
     private $target_connection_sig;
 
     /**
+     * @param string    $target_connection_sig
      * @param array     $qcache_config
-     * @param string[]  $db_connection_cache_data
-     * @param string[]  $db_connection_target_data
+     * @param string[]  $db_connector_cache
+     * @param string[]  $db_connector_target
      * @throws QcEx\QCacheException
      */
-    function __construct($qcache_config, $db_connection_cache_data, $db_connection_target_data=[])
+    function __construct($target_connection_sig, $qcache_config, $db_connector_cache, $db_connector_target=[])
     {
         if (!function_exists('gzdeflate'))
             throw new QcEx\QCacheException("Please install 'ext-zlib'");
 
+        $this->target_connection_sig = $target_connection_sig;
         $this->qcache_config = $qcache_config;
 
-        if (!$db_connection_target_data)
-            $db_connection_target_data = $db_connection_cache_data;
+        if (!$db_connector_target)
+            $db_connector_target = $db_connector_cache;
 
-        $this->db_connection_cache = self::getConnection($qcache_config, $db_connection_cache_data);
-        $this->db_connection_target = self::getConnection($qcache_config, $db_connection_target_data);
+        $this->db_connection_cache = self::getConnection($qcache_config, $db_connector_cache);
+        $this->db_connection_target = self::getConnection($qcache_config, $db_connector_target);
 
-        $this->target_connection_sig = Conn\DbConnector::getSignature($db_connection_target_data);
-
-        $this->table_qc_cache = $this->target_connection_sig . '_cache';
-        $this->table_qc_logs  = $this->target_connection_sig . '_logs';
+        $this->table_qc_cache = $target_connection_sig . '_cache';
+        $this->table_qc_logs  = $target_connection_sig . '_logs';
     }
 
     /**
@@ -64,6 +64,7 @@ class QCache extends QCacheUtils
      * @param string $description
      *
      * @return SqlResultSet|false
+     * @throws QcEx\QCacheException
      */
     public function query($sql, $tables = null, $description = '')
     {

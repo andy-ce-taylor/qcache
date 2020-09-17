@@ -13,11 +13,6 @@ class TableQueryException extends QCacheException
      */
     public function __construct($description, $sql, $db_type, $err_message='')
     {
-        $db_type = strtoupper($db_type);
-
-        if ($err_message)
-            $err_message = "\"$err_message\" ";
-
-        parent::__construct("[$db_type] $description " . $err_message . "with query \"$sql\"");
+        parent::__construct("[$db_type] $description $err_message");
     }
 }

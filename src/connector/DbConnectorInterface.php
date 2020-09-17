@@ -8,6 +8,11 @@ use acet\qcache\SqlResultSet;
 interface DbConnectorInterface
 {
     /**
+     * @return bool
+     */
+    public function isEnabled();
+
+    /**
      * @param string $str
      * @return string
      */
