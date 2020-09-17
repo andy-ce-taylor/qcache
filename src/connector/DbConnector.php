@@ -39,7 +39,7 @@ class DbConnector extends DbChangeDetection
      * @param string[] $db_connection_data
      * @param bool     $cached_updates_table
      */
-    function __construct($qcache_config, $db_connection_data, $cached_updates_table)
+    function __construct($qcache_config, $db_connection_data, $cached_updates_table=false)
     {
         $this->qcache_config = $qcache_config;
         $this->db_name = $db_connection_data['name'];

@@ -191,8 +191,8 @@ class QCacheUtils
                     $sql .= $cache_conn->getCreateTableSQL_table_update_times($table_name);
             }
 
-//            if ($sql)
-//                $cache_conn->multi_write($sql);
+            if ($sql)
+                $cache_conn->multi_write($sql);
         }
     }
 
