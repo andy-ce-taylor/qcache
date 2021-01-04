@@ -2,7 +2,7 @@
 
 #### Database query caching
 
-Qcache is a query caching library which works with MySQL, MSSQL and sqlite databases.
+Qcache is a query caching library which works with MySQL, MSSQL and SQLite databases.
 
 PHP scripts spend much of their time querying databases using SELECT statements. Qcache can
 replace those calls, making time-hungry database operations perform faster and more efficiently.
@@ -44,7 +44,7 @@ You can also manually edit your composer.json file:
 ```
     {
         "require": {
-           "acet/Qcache": "*"
+           "acet/qcache": "2.*"
         }
     }
 ```
