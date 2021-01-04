@@ -2,7 +2,7 @@
 
 namespace acet\qcache\exception;
 
-class TableQueryException extends QCacheException
+class TableQueryException extends QcacheException
 {
     /**
      * TableQueryException constructor.

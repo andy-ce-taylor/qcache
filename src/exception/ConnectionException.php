@@ -2,7 +2,7 @@
 
 namespace acet\qcache\exception;
 
-class ConnectionException extends QCacheException
+class ConnectionException extends QcacheException
 {
     /**
      * ConnectionException constructor.

@@ -301,7 +301,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
                     hash            CHAR(32)            NOT NULL PRIMARY KEY,
                     access_time     INT(11)         DEFAULT NULL,
                     script          VARCHAR(4000)   DEFAULT NULL,
-                    av_nanosecs     REAL            DEFAULT NULL,
+                    av_microtime    REAL            DEFAULT NULL,
                     impressions     INT(11)         DEFAULT NULL,
                     description     VARCHAR(500)    DEFAULT NULL,
                     tables_csv      VARCHAR(1000)   DEFAULT NULL,
@@ -321,7 +321,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
                     id              INT(11)             NOT NULL PRIMARY KEY,
                     time            INT(11)         DEFAULT NULL,
                     context         CHAR(4)         DEFAULT NULL,
-                    nanosecs        REAL            DEFAULT NULL,
+                    microtime       REAL            DEFAULT NULL,
                     hash            CHAR(32)        DEFAULT NULL
                 );";
     }

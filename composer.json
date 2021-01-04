@@ -2,15 +2,16 @@
     "name": "acet/qcache",
     "description": "Database query caching",
     "keywords": [
-        "PHP",
-        "sql",
-        "mysql",
-        "mssql",
-        "sql server",
-        "sqlite",
-        "query",
         "cache",
-        "caching"
+        "caching",
+        "database",
+        "mssql",
+        "mysql",
+        "query",
+        "sql server",
+        "sql",
+        "sqlite",
+        "sqlite3"
     ],
     "type": "library",
     "license": "GPL-3.0",
@@ -22,7 +23,7 @@
     ],
     "require": {
         "ext-json": "*",
-        "php": "^5.4 || ^7.0"
+        "php": "^7.1"
     },
     "autoload": {
         "psr-4": {

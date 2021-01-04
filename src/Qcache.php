@@ -1,13 +1,12 @@
 <?php
+/** @noinspection SqlNoDataSourceInspection */
 
 namespace acet\qcache;
 
 use acet\qcache\connector as Conn;
 use acet\qcache\exception as QcEx;
 
-function aa(string $str, int $level) { return $str; }
-
-class QCache extends QCacheUtils
+class Qcache extends QcacheUtils
 {
     const RESULTSET_INDEX = 6;  // index of the resultset within the array stored in cache files
 
@@ -34,12 +33,12 @@ class QCache extends QCacheUtils
      * @param array     $qcache_config
      * @param string[]  $db_connector_cache
      * @param string[]  $db_connector_target
-     * @throws QcEx\QCacheException
+     * @throws QcEx\QcacheException
      */
     function __construct($target_connection_sig, $qcache_config, $db_connector_cache, $db_connector_target=[])
     {
         if (!function_exists('gzdeflate'))
-            throw new QcEx\QCacheException("Please install 'ext-zlib'");
+            throw new QcEx\QcacheException("Please install 'ext-zlib'");
 
         $this->target_connection_sig = $target_connection_sig;
         $this->qcache_config = $qcache_config;
@@ -64,19 +63,19 @@ class QCache extends QCacheUtils
      * @param string $description
      *
      * @return SqlResultSet|false
-     * @throws QcEx\QCacheException
+     * @throws QcEx\QcacheException
      */
     public function query($sql, $tables = null, $description = '')
     {
         if (!$this->qcache_config['enabled'])
             return false;
 
-        $start_nanosecs = hrtime(true);
+        $start_microtime = microtime(true);
         $time_now = time();
 
         $hash = hash('md5', $sql = trim($sql));
 
-        $columns = 'access_time, script, av_nanosecs, impressions, description, tables_csv, resultset';
+        $columns = 'access_time, script, av_microtime, impressions, description, tables_csv, resultset';
         $sql_get_cache = "SELECT $columns FROM $this->table_qc_cache WHERE hash='$hash'";
 
         $cache_file = $this->qcache_config['qcache_folder'] . DIRECTORY_SEPARATOR . "$this->target_connection_sig#$hash.dat";
@@ -94,17 +93,17 @@ class QCache extends QCacheUtils
         if ($cached_data) {
             // SQL statement has been seen before
 
-            [$access_time, $script, $av_nanosecs, $impressions, $description, $tables_csv, $resultset] = $cached_data;
+            [$access_time, $script, $av_microtime, $impressions, $description, $tables_csv, $resultset] = $cached_data;
 
             // check whether cache is stale (tables have changed since last access time)
             if ($this->db_connection_target->findTableChanges($access_time, explode(',', $tables_csv), $this->db_connection_cache)) {
 
                 // perform a fresh query and update cache
-                $start_nanosecs = hrtime(true); // restart nanosecond timer
+                $start_microtime = microtime(true); // restart microsecond timer
                 $resultset = $this->db_connection_target->read($sql, true);
-                $elapsed_nanosecs = hrtime(true) - $start_nanosecs;
+                $elapsed_microtime = microtime(true) - $start_microtime;
 
-                $av_nanosecs = (float)($elapsed_nanosecs + $av_nanosecs * $impressions++) / $impressions;
+                $av_microtime = (float)($elapsed_microtime + $av_microtime * $impressions++) / $impressions;
 
                 $resultset_gz = gzdeflate(serialize($resultset), $this->qcache_config['gz_compression_level']);
                 $resultset_gz_esc = $this->db_connection_cache->escapeBinData($resultset_gz);
@@ -117,7 +116,7 @@ class QCache extends QCacheUtils
                     $this->db_connection_cache->write(
                         "UPDATE $this->table_qc_cache ".
                         "SET access_time=$access_time,".
-                        "av_nanosecs=$av_nanosecs,".
+                        "av_microtime=$av_microtime,".
                         "impressions=$impressions,".
                         "resultset=$resultset_gz_esc ".
                         "WHERE hash='$hash'"
@@ -132,7 +131,7 @@ class QCache extends QCacheUtils
                 else { // save to file - slower, but better for large result sets
                     SerializedDataFileIO::write(
                         $cache_file,
-                        [$access_time, $script, $av_nanosecs, $impressions, $description, $tables_csv, $resultset_gz]
+                        [$access_time, $script, $av_microtime, $impressions, $description, $tables_csv, $resultset_gz]
                     );
 
                     // if the same db record exists, delete it
@@ -141,15 +140,15 @@ class QCache extends QCacheUtils
                     }
                 }
 
-                $this->logTransactionStats($time_now, $context, $elapsed_nanosecs, $hash);
+                $this->logTransactionStats($time_now, $context, $elapsed_microtime, $hash);
 
                 return $resultset;
             }
 
             // Cache is fresh - return a quick result from cache
-            $elapsed_nanosecs = hrtime(true) - $start_nanosecs;
+            $elapsed_microtime = microtime(true) - $start_microtime;
 
-            $this->logTransactionStats($time_now, 'qc', $elapsed_nanosecs, $hash);
+            $this->logTransactionStats($time_now, 'qc', $elapsed_microtime, $hash);
 
             return $resultset;
         }
@@ -157,14 +156,14 @@ class QCache extends QCacheUtils
         // previously unseen SQL statement
 
         if (is_null($tables)) // try to find table names within the statement
-            if (($tables = QCacheUtils::getTables($sql)) == false)
+            if (($tables = QcacheUtils::getTables($sql)) == false)
                 return false; // no table names found
 
         $tables_csv = is_array($tables) ? implode(',', $tables) : $tables;
 
-        $start_nanosecs = hrtime(true); // restart nanosecond timer
+        $start_microtime = microtime(true); // restart microsecond timer
         $resultset = $this->db_connection_target->read($sql, true);
-        $elapsed_nanosecs = hrtime(true) - $start_nanosecs;
+        $elapsed_microtime = microtime(true) - $start_microtime;
 
         $resultset_gz = gzdeflate(serialize($resultset), $this->qcache_config['gz_compression_level']);
         $resultset_gz_esc = $this->db_connection_cache->escapeBinData($resultset_gz);
@@ -177,18 +176,18 @@ class QCache extends QCacheUtils
             $script_esc = $this->db_connection_cache->escapeString($sql);
 
             $this->db_connection_cache->write(
-                "INSERT INTO $this->table_qc_cache (hash, access_time, script, av_nanosecs, impressions, description, tables_csv, resultset) ".
-                "VALUES ('$hash', $time_now, $script_esc, $elapsed_nanosecs, 1, $description_esc, '$tables_csv', $resultset_gz_esc)"
+                "INSERT INTO $this->table_qc_cache (hash, access_time, script, av_microtime, impressions, description, tables_csv, resultset) ".
+                "VALUES ('$hash', $time_now, $script_esc, $elapsed_microtime, 1, $description_esc, '$tables_csv', $resultset_gz_esc)"
             );
         }
 
         else // save to file - slower, but better for large result sets
             SerializedDataFileIO::write(
                 $cache_file,
-                [$time_now, $sql, $elapsed_nanosecs, 1, $description, $tables_csv, $resultset_gz]
+                [$time_now, $sql, $elapsed_microtime, 1, $description, $tables_csv, $resultset_gz]
             );
 
-        $this->logTransactionStats($time_now, $context, $elapsed_nanosecs, $hash);
+        $this->logTransactionStats($time_now, $context, $elapsed_microtime, $hash);
 
         return $resultset;
     }
@@ -256,15 +255,15 @@ class QCache extends QCacheUtils
      *
      * @param $time
      * @param $context
-     * @param $nanosecs
+     * @param $microtime
      * @param $hash
      */
-    private function logTransactionStats($time, $context, $nanosecs, $hash)
+    private function logTransactionStats($time, $context, $microtime, $hash)
     {
         if ($this->qcache_config['log_to_cache_db'])
             $this->db_connection_cache->write(
-                "INSERT INTO $this->table_qc_logs (time, context, nanosecs, hash) ".
-                "VALUES ($time, $context, $nanosecs, '$hash')"
+                "INSERT INTO $this->table_qc_logs (time, context, microtime, hash) ".
+                "VALUES ($time, $context, $microtime, '$hash')"
             );
     }
 }

@@ -6,15 +6,13 @@
 
 namespace acet\qcache;
 
-use acet\qcache\connector as Conn;
-
-class QCacheUtils
+class QcacheUtils
 {
     const CONFIG_SIG_FILE = 'config_signature.txt';
     const FOLDER_SIG_FILE = 'folder_signature.txt';
 
     /**
-     * Returns a description suitable for passing to QCache::query.
+     * Returns a description suitable for passing to Qcache::query.
      *
      * @param string $file  - use __FILE__
      * @param string $func  - use __FUNCTION__
@@ -28,8 +26,14 @@ class QCacheUtils
     }
 
     /**
-     * Returns TRUE if Qcache can process the given SQL statement and is likely to significantly
-     * improve performance, otherwise FALSE.
+     * Determines whether method Qcache::query() would be successful in parsing table names from the given SQL
+     * statement or whether table names should be supplied as an argument.
+     *
+     * Returns TRUE if Qcache is capable of parsing table names from the given SQL statement and is likely to
+     * significantly improve performance, otherwise FALSE.
+     *
+     * Note: Qcache can handle ALL select statements - this function merely determines whether it needs
+     *       table name hints.
      *
      * @param string $sql
      * @return bool
@@ -46,12 +50,12 @@ class QCacheUtils
 
         $qstr_tmp_lc = strtolower(trim($sql));
 
-        return $cacheable_l1c[$hash] = (            // QCache can handle this if the statement...
-            substr($qstr_tmp_lc, 0, 7) == 'select ' &&  // is a SELECT
-            strpos($qstr_tmp_lc, ' from ', 7)       &&  // and has a FROM
-            strpos($qstr_tmp_lc, ' join ', 7)       &&  // and has a JOIN
-            ! strpos($qstr_tmp_lc, 'count(', 7)     &&  // and doesn't have a count (unsupported)
-            ! strpos($qstr_tmp_lc, ' select ', 7)       // and doesn't have an embedded SELECT (unsupported)
+        return $cacheable_l1c[$hash] = (                  // Qcache should handle this if the statement...
+            substr($qstr_tmp_lc, 0, 7) == 'select '   &&  // is a SELECT
+            strpos($qstr_tmp_lc, ' from ', 7)         &&  // and has a FROM
+            strpos($qstr_tmp_lc, ' join ', 7)         &&  // and has a JOIN
+            ! strpos($qstr_tmp_lc, 'count(', 7)       &&  // and doesn't have a count (unsupported)
+            ! strpos($qstr_tmp_lc, ' select ', 7)         // and doesn't have an embedded SELECT (unsupported)
         );
     }
 
@@ -124,7 +128,7 @@ class QCacheUtils
      */
     public function clearCache($db_connection_cache, $target_db_connector_sigs, $qcache_config)
     {
-        $cache_conn = QCache::getConnection($qcache_config, $db_connection_cache);
+        $cache_conn = Qcache::getConnection($qcache_config, $db_connection_cache);
 
         foreach ($target_db_connector_sigs as $sig) {
             $cache_conn->truncateTable($sig . '_cache');
@@ -148,7 +152,7 @@ class QCacheUtils
         $target_db_connector_sigs = array_keys($target_db_connectors);
 
         $folder_sig_file = $qcache_config['qcache_folder'] . DIRECTORY_SEPARATOR . self::FOLDER_SIG_FILE;
-        if ($folder_sig = self::detectQCacheSourceFileChanges($folder_sig_file)) {
+        if ($folder_sig = self::detectQcacheSourceFileChanges($folder_sig_file)) {
 
             foreach ($target_db_connector_sigs as $sig)
                 self::deleteCacheFiles($qcache_config['qcache_folder'], $sig);
@@ -159,13 +163,13 @@ class QCacheUtils
         }
 
         $config_sig_file = $qcache_config['qcache_folder'] . DIRECTORY_SEPARATOR . self::CONFIG_SIG_FILE;
-        if ($config_sig = self::detectQCacheConfigChanges($qcache_config, $config_sig_file)) {
+        if ($config_sig = self::detectQcacheConfigChanges($qcache_config, $config_sig_file)) {
             @unlink($config_sig_file);
             file_put_contents($config_sig_file, $config_sig);
             $rebuild = true;
         }
 
-        $cache_conn = QCache::getConnection($qcache_config, $db_connection_cache);
+        $cache_conn = Qcache::getConnection($qcache_config, $db_connection_cache);
 
 //echo "<pre>"; var_dump($cache_conn); echo "</pre>";
 
@@ -183,7 +187,7 @@ class QCacheUtils
             if ($rebuild || !$cache_conn->tableExists($db_name, $table_name))
                 $sql .= $cache_conn->getCreateTableSQL_logs($table_name);
 
-            $target_conn = QCache::getConnection($qcache_config, $connector);
+            $target_conn = Qcache::getConnection($qcache_config, $connector);
 
             if ($target_conn->dbUsesCachedUpdatesTable()) {
                 $table_name = $sig .'_table_update_times';
@@ -197,13 +201,13 @@ class QCacheUtils
     }
 
     /**
-     * Detects changes to the database schema and other files that are specific to this version of QCache.
+     * Detects changes to the database schema and other files that are specific to this version of Qcache.
      * Returns a folder signature if changes are detected, otherwise FALSE.
      *
      * @var string $folder_sig_file
      * @return bool
      */
-    private static function detectQCacheSourceFileChanges($folder_sig_file)
+    private static function detectQcacheSourceFileChanges($folder_sig_file)
     {
         $folder_sig = self::getFolderSignature(realpath(__DIR__ . DIRECTORY_SEPARATOR . '..'));
 
@@ -226,7 +230,7 @@ class QCacheUtils
      * @var string $config_sig_file
      * @return bool
      */
-    private static function detectQCacheConfigChanges($qcache_config, $config_sig_file)
+    private static function detectQcacheConfigChanges($qcache_config, $config_sig_file)
     {
         $config_sig = serialize($qcache_config);
 

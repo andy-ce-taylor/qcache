@@ -393,7 +393,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
                     hash            CHAR(32)            NOT NULL  PRIMARY KEY,
                     access_time     INT             DEFAULT NULL,
                     script          VARCHAR(4000)   DEFAULT NULL,
-                    av_nanosecs     FLOAT           DEFAULT NULL,
+                    av_microtime    FLOAT           DEFAULT NULL,
                     impressions     INT             DEFAULT NULL,
                     description     VARCHAR(500)    DEFAULT NULL,
                     tables_csv      VARCHAR(1000)   DEFAULT NULL,
@@ -416,7 +416,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
                     id              INT             IDENTITY(1,1) PRIMARY KEY,
                     time            INT             DEFAULT NULL,
                     context         CHAR(4)         DEFAULT NULL,
-                    nanosecs        FLOAT           DEFAULT NULL,
+                    microtime       FLOAT           DEFAULT NULL,
                     hash            CHAR(32)        DEFAULT NULL
                 );";
     }

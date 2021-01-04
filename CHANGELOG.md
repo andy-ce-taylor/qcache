@@ -23,8 +23,8 @@
 - gz compression introduced.
 
 ### 1.1.11
-- QCache::constructor will now throw an exception if the qcache folder doesn't exist. 
-- Function QCache::query will now return FALSE if there are problems (instead of throwing an exception).
+- Qcache::constructor will now throw an exception if the qcache folder doesn't exist. 
+- Function Qcache::query will now return FALSE if there are problems (instead of throwing an exception).
 - Moved logging into a separate function.
 - Comments & tidy-up.
 
@@ -56,7 +56,7 @@
 - Various optimizations.
 
 ### 1.1.3
-- QCache to create it's own tables.
+- Qcache to create it's own tables.
 - Refactored various sections of code.
 
 ### 1.1.2

@@ -298,7 +298,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
                     hash            CHAR(32)            NOT NULL PRIMARY KEY DEFAULT ' ',
                     access_time     INT(11)         DEFAULT NULL,
                     script          VARCHAR(4000)   DEFAULT NULL,
-                    av_nanosecs     FLOAT           DEFAULT NULL,
+                    av_microtime    FLOAT           DEFAULT NULL,
                     impressions     INT(11)         DEFAULT NULL,
                     description     VARCHAR(500)    DEFAULT NULL,
                     tables_csv      VARCHAR(1000)   DEFAULT NULL,
@@ -318,7 +318,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
                     id              INT(11)             NOT NULL PRIMARY KEY AUTO_INCREMENT,
                     time            INT(11)         DEFAULT NULL,
                     context         CHAR(4)         DEFAULT NULL,
-                    nanosecs        FLOAT           DEFAULT NULL,
+                    microtime       FLOAT           DEFAULT NULL,
                     hash            CHAR(32)        DEFAULT NULL
                 );";
     }
