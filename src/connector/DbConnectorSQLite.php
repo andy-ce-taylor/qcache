@@ -33,12 +33,12 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
         $key = implode(':', $db_connection_data);
 
         if (array_key_exists($key, $_connection)) {
-            if (!$_connection[$key])
+            if (!$_connection[$key]) {
                 throw new QcEx\ConnectionException(self::SERVER_NAME);
+            }
 
             $this->conn = $_connection[$key];
-        }
-        else {
+        } else {
             try {
 
                 $_connection[$key] = $this->conn = new SQLite3(
@@ -95,8 +95,9 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
 
             $sql = "SELECT datetime('now', 'localtime')";
 
-            if (($result = @$this->conn->query($sql)) === false)
+            if (($result = @$this->conn->query($sql)) === false) {
                 throw new QcEx\TableReadException('datetime', $sql, self::SERVER_NAME);
+            }
 
             $db_timestamp = $result->fetchArray(SQLITE3_ASSOC);
 
@@ -132,11 +133,13 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
 
             $selector = "`{$selector}`";
 
-            if (strpos($selector, ',') !== false)
+            if (strpos($selector, ',') !== false) {
                 $selector = "CONCAT(" . str_replace(',', ', " ", ', $selector) . ')';
+            }
 
-            foreach ($selector_values as $val)
+            foreach ($selector_values as $val) {
                 $where .= "{$selector} = '{$val}' OR ";
+            }
 
             // get rid of final 'OR'
             $where = 'WHERE ' . substr($where, 0, -4);
@@ -158,16 +161,19 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
     {
         $data = [];
 
-        if (($result = @$this->conn->query($sql)) === false)
+        if (($result = @$this->conn->query($sql)) === false) {
             throw new QcEx\TableReadException('', $sql, self::SERVER_NAME);
+        }
 
-        while ($row = $result->fetchArray(SQLITE3_ASSOC))
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
             $data[] = $row;
+        }
 
         $this->freeResultset($result);
 
-        if (!$return_resultset)
+        if (!$return_resultset) {
             return $data;
+        }
 
         return new SqlResultSet($data);
     }
@@ -182,11 +188,13 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
     {
         $data = [];
 
-        if (($result = @$this->conn->query($sql)) === false)
+        if (($result = @$this->conn->query($sql)) === false) {
             throw new QcEx\TableReadException('', $sql, self::SERVER_NAME);
+        }
 
-        while ($row = $result->fetchArray(SQLITE3_NUM))
+        while ($row = $result->fetchArray(SQLITE3_NUM)) {
             $data[] = $row[0];
+        }
 
         $this->freeResultset($result);
 
@@ -201,8 +209,9 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
      */
     public function write($sql)
     {
-        if (@$this->conn->exec($sql) === false)
+        if (@$this->conn->exec($sql) === false) {
             throw new QcEx\TableWriteException('', $sql, self::SERVER_NAME);
+        }
 
         return true;
     }
@@ -247,8 +256,9 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
              WHERE type='table' $specific_tables_clause
              ORDER BY name;";
 
-        if (($result = @$this->conn->query($sql)) === false)
+        if (($result = @$this->conn->query($sql)) === false) {
             throw new QcEx\TableReadException('sqlite_master', $sql, self::SERVER_NAME);
+        }
 
         while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
             // typical sqlite timestamp value: 2020-05-24 12:34:56
@@ -351,11 +361,13 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
 
         $data = [];
 
-        if (($result = @$this->conn->query($sql)) === false)
+        if (($result = @$this->conn->query($sql)) === false) {
             throw new QcEx\TableReadException($table, $sql, self::SERVER_NAME);
+        }
 
-        while ($row = $result->fetchArray(SQLITE3_ASSOC))
+        while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
             $data[] = $row['Column_name'];
+        }
 
         return $data;
     }

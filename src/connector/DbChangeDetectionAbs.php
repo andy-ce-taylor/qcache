@@ -2,7 +2,11 @@
 
 namespace acet\qcache\connector;
 
-abstract class DbChangeDetection
+/**
+ * @method getTableTimes($db_connection_cache, string[] $table_names)
+ * @method getDbTimeOffset()
+ */
+abstract class DbChangeDetectionAbs
 {
     /**
      * Returns TRUE if any tables have changed since the given unix epoch time.
@@ -49,14 +53,17 @@ abstract class DbChangeDetection
     public function getChangedTables($since, $table_names, $db_connection_cache)
     {
         // can it be assumed that all tables have changed?
-        if (($table_change_times = $this->getTableChangeTimes($table_names, $db_connection_cache)) === false)
+        if (($table_change_times = $this->getTableChangeTimes($table_names, $db_connection_cache)) === false) {
             return $table_names;
+        }
 
         $changed_tables = [];
 
-        foreach ($table_change_times as $table => $change_time)
-            if ($change_time > $since)
+        foreach ($table_change_times as $table => $change_time) {
+            if ($change_time > $since) {
                 $changed_tables[] = $table;
+            }
+        }
 
         return $changed_tables;
     }
@@ -76,14 +83,16 @@ abstract class DbChangeDetection
         static $table_times_l1c;
 
         if (!$table_times_l1c) {
-            if (($table_times_l1c = $this->getTableTimes($db_connection_cache, $table_names)) === false)
+            if (($table_times_l1c = $this->getTableTimes($db_connection_cache, $table_names)) === false) {
                 return false;
+            }
 
             // add the db time offset to each table change time
             $time_offset = $this->getDbTimeOffset();
 
-            foreach ($table_times_l1c as &$t)
+            foreach ($table_times_l1c as &$t) {
                 $t += $time_offset;
+            }
         }
 
         return array_intersect_key($table_times_l1c, array_flip($table_names));

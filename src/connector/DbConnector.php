@@ -8,11 +8,10 @@
 namespace acet\qcache\connector;
 
 use acet\qcache\SqlResultSet;
-use DateTime;
 use mysqli;
 use SQLite3;
 
-class DbConnector extends DbChangeDetection
+class DbConnector extends DbChangeDetectionAbs
 {
     /** @var mysqli|SQLite3|resource */
     protected $conn;
@@ -46,8 +45,9 @@ class DbConnector extends DbChangeDetection
 
         $this->db_uses_cached_updates_table = $cached_updates_table;
 
-        if ($cached_updates_table)
+        if ($cached_updates_table) {
             $this->updates_table = self::getConnectorSignature($db_connection_data) . '_table_update_times';
+        }
     }
 
     // Getters
@@ -92,9 +92,11 @@ class DbConnector extends DbChangeDetection
         $table_update_times = [];
 
         /** @var SqlResultSet[] $rows */
-        if ($rows = $db_connection_cache->read("SELECT * FROM $table_update_times_table"))
-            while ($row = $rows->fetch_assoc())
+        if ($rows = $db_connection_cache->read("SELECT * FROM $table_update_times_table")) {
+            while ($row = $rows->fetch_assoc()) {
                 $table_update_times[$row['name']] = $row['update_time'];
+            }
+        }
 
         return $table_update_times;
     }

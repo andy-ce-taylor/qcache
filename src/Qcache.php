@@ -37,20 +37,33 @@ class Qcache extends QcacheUtils
      */
     function __construct($target_connection_sig, $qcache_config, $db_connector_cache, $db_connector_target=[])
     {
-        if (!function_exists('gzdeflate'))
+        if (!function_exists('gzdeflate')) {
             throw new QcEx\QcacheException("Please install 'ext-zlib'");
+        }
 
-        $this->target_connection_sig = $target_connection_sig;
-        $this->qcache_config = $qcache_config;
+        if (!$qcache_config['qcache_folder'] || !is_dir($qcache_config['qcache_folder'])) {
+            throw new QcEx\QcacheException("Option 'qcache_folder' must be specified");
+        }
 
-        if (!$db_connector_target)
+        $this->qcache_config = array_merge([
+            'enabled'               => true,
+            'qcache_folder'         => '',
+            'log_to_cache_db'       => Constants::LOG_TO_DB,
+            'gz_compression_level'  => Constants::GZ_COMPRESSION_LEVEL,
+            'max_db_resultset_size' => Constants::MAX_DB_RESULTSET_SIZE
+        ], $qcache_config);
+
+        // if no db connector is specified, use the same one as the cache
+        if (!$db_connector_target) {
             $db_connector_target = $db_connector_cache;
+        }
 
         $this->db_connection_cache = self::getConnection($qcache_config, $db_connector_cache);
         $this->db_connection_target = self::getConnection($qcache_config, $db_connector_target);
 
+        $this->target_connection_sig = $target_connection_sig;
         $this->table_qc_cache = $target_connection_sig . '_cache';
-        $this->table_qc_logs  = $target_connection_sig . '_logs';
+        $this->table_qc_logs = $target_connection_sig . '_logs';
     }
 
     /**
@@ -67,8 +80,9 @@ class Qcache extends QcacheUtils
      */
     public function query($sql, $tables = null, $description = '')
     {
-        if (!$this->qcache_config['enabled'])
+        if (!$this->qcache_config['enabled']) {
             return false;
+        }
 
         $start_microtime = microtime(true);
         $time_now = time();
@@ -84,8 +98,7 @@ class Qcache extends QcacheUtils
             $data[0]['resultset'] = unserialize(gzinflate($data[0]['resultset']));
             $cached_data = array_values($data[0]);
             $from_db = true;
-        }
-        elseif ($cached_data = SerializedDataFileIO::read($cache_file)) { // from file
+        } elseif ($cached_data = SerializedDataFileIO::read($cache_file)) { // from file
             $cached_data[self::RESULTSET_INDEX] = unserialize(gzinflate($cached_data[self::RESULTSET_INDEX]));
             $from_db = false;
         }
@@ -126,9 +139,7 @@ class Qcache extends QcacheUtils
                     if (!$from_db && file_exists($cache_file)) {
                         unlink($cache_file);
                     }
-                }
-
-                else { // save to file - slower, but better for large result sets
+                } else { // save to file - slower, but better for large result sets
                     SerializedDataFileIO::write(
                         $cache_file,
                         [$access_time, $script, $av_microtime, $impressions, $description, $tables_csv, $resultset_gz]
@@ -155,9 +166,11 @@ class Qcache extends QcacheUtils
 
         // previously unseen SQL statement
 
-        if (is_null($tables)) // try to find table names within the statement
-            if (($tables = QcacheUtils::getTables($sql)) == false)
+        if (is_null($tables)) { // try to find table names within the statement
+            if (($tables = QcacheUtils::getTables($sql)) == false) {
                 return false; // no table names found
+            }
+        }
 
         $tables_csv = is_array($tables) ? implode(',', $tables) : $tables;
 
@@ -179,13 +192,12 @@ class Qcache extends QcacheUtils
                 "INSERT INTO $this->table_qc_cache (hash, access_time, script, av_microtime, impressions, description, tables_csv, resultset) ".
                 "VALUES ('$hash', $time_now, $script_esc, $elapsed_microtime, 1, $description_esc, '$tables_csv', $resultset_gz_esc)"
             );
-        }
-
-        else // save to file - slower, but better for large result sets
+        } else { // save to file - slower, but better for large result sets
             SerializedDataFileIO::write(
                 $cache_file,
                 [$time_now, $sql, $elapsed_microtime, 1, $description, $tables_csv, $resultset_gz]
             );
+        }
 
         $this->logTransactionStats($time_now, $context, $elapsed_microtime, $hash);
 
@@ -260,10 +272,11 @@ class Qcache extends QcacheUtils
      */
     private function logTransactionStats($time, $context, $microtime, $hash)
     {
-        if ($this->qcache_config['log_to_cache_db'])
+        if ($this->qcache_config['log_to_cache_db']) {
             $this->db_connection_cache->write(
                 "INSERT INTO $this->table_qc_logs (time, context, microtime, hash) ".
-                "VALUES ($time, $context, $microtime, '$hash')"
+                "VALUES ($time, '$context', $microtime, '$hash')"
             );
+        }
     }
 }

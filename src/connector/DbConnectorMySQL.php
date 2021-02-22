@@ -34,12 +34,12 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
         $key = implode(':', $db_connection_data);
 
         if (array_key_exists($key, $_connection)) {
-            if (!$_connection[$key])
+            if (!$_connection[$key]) {
                 throw new QcEx\ConnectionException(self::SERVER_NAME);
+            }
 
             $this->conn = $_connection[$key];
-        }
-        else {
+        } else {
             $driver = new mysqli_driver();
             $driver->report_mode = MYSQLI_REPORT_STRICT;
 
@@ -92,8 +92,9 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
 
             $sql = 'SELECT NOW()';
 
-            if (($result = $this->conn->query($sql)) === false)
+            if (($result = $this->conn->query($sql)) === false) {
                 throw new QcEx\TableReadException('NOW', $sql, self::SERVER_NAME, $this->conn->error);
+            }
 
             $db_timestamp = $result->fetch_row()[0];
 
@@ -131,11 +132,13 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
 
             $selector = "`{$selector}`";
 
-            if (strpos($selector, ',') !== false)
+            if (strpos($selector, ',') !== false) {
                 $selector = "CONCAT(" . str_replace(',', ', " ", ', $selector) . ')';
+            }
 
-            foreach ($selector_values as $val)
+            foreach ($selector_values as $val) {
                 $where .= "{$selector} = " . $this->escapeString($val) . " OR ";
+            }
 
             // get rid of final 'OR'
             $where = 'WHERE ' . substr($where, 0, -4);
@@ -160,13 +163,15 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
             throw new QcEx\TableReadException('', $sql, self::SERVER_NAME, $this->conn->error);
         }
 
-        while ($row = $result->fetch_assoc())
+        while ($row = $result->fetch_assoc()) {
             $data[] = $row;
+        }
 
         $this->freeResultset($result);
 
-        if (!$return_resultset)
+        if (!$return_resultset) {
             return $data;
+        }
 
         return new SqlResultSet($data);
     }
@@ -181,11 +186,13 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
     {
         $data = [];
 
-        if (($result = $this->conn->query($sql)) === false)
+        if (($result = $this->conn->query($sql)) === false) {
             throw new QcEx\TableReadException('', $sql, self::SERVER_NAME, $this->conn->error);
+        }
 
-        while ($row = $result->fetch_array(MYSQLI_NUM))
+        while ($row = $result->fetch_array(MYSQLI_NUM)) {
             $data[] = $row[0];
+        }
 
         return $data;
     }
@@ -198,8 +205,9 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      */
     public function write($sql)
     {
-        if ($this->conn->query($sql) === false)
+        if ($this->conn->query($sql) === false) {
             throw new QcEx\TableWriteException('', $sql, self::SERVER_NAME, $this->conn->error);
+        }
 
         return true;
     }
@@ -212,7 +220,9 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      */
     public function multi_write($sql)
     {
-        return $this->write($sql);
+        if ($this->conn->multi_query($sql) === false) {
+            throw new QcEx\TableWriteException('', $sql, self::SERVER_NAME, $this->conn->error);
+        }
     }
 
     /**
@@ -222,8 +232,9 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      */
     public function freeResultset($resultset)
     {
-        if ($resultset->num_rows)
+        if ($resultset->num_rows) {
             $resultset->free_result();
+        }
 
         return true;
     }
@@ -247,8 +258,9 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
              FROM information_schema.tables
              WHERE TABLE_SCHEMA = '$db_name' $specific_tables_clause";
 
-        if (($result = @$this->conn->query($sql)) === false)
+        if (($result = @$this->conn->query($sql)) === false) {
             throw new QcEx\TableReadException('information_schema.tables', $sql, self::SERVER_NAME, $this->conn->error);
+        }
 
         while ($row = $result->fetch_assoc()) {
             // typical mysql timestamp value: 2020-05-24 12:34:56
@@ -348,11 +360,13 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
 
         $data = [];
 
-        if (($result = @$this->conn->query($sql)) === false)
+        if (($result = @$this->conn->query($sql)) === false) {
             throw new QcEx\TableReadException($table, $sql, self::SERVER_NAME, $this->conn->error);
+        }
 
-        while ($row = $result->fetch_assoc())
+        while ($row = $result->fetch_assoc()) {
             $data[] = $row['Column_name'];
+        }
 
         $this->freeResultset($result);
 

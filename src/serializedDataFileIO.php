@@ -9,9 +9,11 @@ class SerializedDataFileIO
      */
     public static function read($file)
     {
-        if (file_exists($file))
-            if ($contents = file_get_contents($file))
+        if (file_exists($file)) {
+            if ($contents = file_get_contents($file)) {
                 return unserialize($contents);
+            }
+        }
 
         return null;
     }

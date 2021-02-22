@@ -29,12 +29,12 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
         $key = implode(':', $db_connection_data);
 
         if (array_key_exists($key, $_connection)) {
-            if (!$_connection[$key])
+            if (!$_connection[$key]) {
                 throw new QcEx\ConnectionException(self::SERVER_NAME);
+            }
 
             $this->conn = $_connection[$key];
-        }
-        else {
+        } else {
             $_connection[$key] = $this->conn = sqlsrv_connect(
                 $db_connection_data['host'],
                 [   'Database' => $db_connection_data['name'],
@@ -58,8 +58,9 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
      */
     public function escapeString($str)
     {
-        if (is_numeric($str))
+        if (is_numeric($str)) {
             return $str;
+        }
 
         return '0x' . unpack('H*hex', $str)['hex'];
     }
@@ -82,8 +83,9 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
     {
         static $database_time_offset_l1c;
 
-        if (!$database_time_offset_l1c)
+        if (!$database_time_offset_l1c) {
             $database_time_offset_l1c = time() - strtotime($this->getCurrentTimestamp());
+        }
 
         return $database_time_offset_l1c;
     }
@@ -116,9 +118,10 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
                 ? "CONCAT(" . str_replace(',', ', " ", ', $selector) . ')'
                 : $selector;
 
-            foreach ($selector_values as $val)
+            foreach ($selector_values as $val) {
                 $where .= "{$selector} = '{$val}' OR ";
 //                $where .= "{$selector} = " . $this->escapeString($val) . " OR ";
+            }
 
             // get rid of final 'OR'
             $where = 'WHERE ' . substr($where, 0, -4);
@@ -144,13 +147,15 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
             throw new QcEx\TableReadException('', $sql, self::SERVER_NAME, reset($errors)['message']);
         }
 
-        while ($row = sqlsrv_fetch_array($result, SQLSRV_FETCH_ASSOC))
+        while ($row = sqlsrv_fetch_array($result, SQLSRV_FETCH_ASSOC)) {
             $data[] = $row;
+        }
 
         $this->freeResultset($result);
 
-        if (!$return_resultset)
+        if (!$return_resultset) {
             return $data;
+        }
 
         return new SqlResultSet($data);
     }
@@ -170,8 +175,9 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
             throw new QcEx\TableReadException('', $sql, self::SERVER_NAME, reset($errors)['message']);
         }
 
-        while ($row = sqlsrv_fetch_array($result, SQLSRV_FETCH_NUMERIC))
+        while ($row = sqlsrv_fetch_array($result, SQLSRV_FETCH_NUMERIC)) {
             $data[] = $row[0];
+        }
 
         $this->freeResultset($result);
 
@@ -250,18 +256,21 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
 
             $table_name = $row['TableName'];
 
-            if ($update_time = $row['last_user_update']) // typical mssql timestamp value: 2019-02-05 12:34:56.789
+            if ($update_time = $row['last_user_update']) {
+                // typical mssql timestamp value: 2019-02-05 12:34:56.789
                 $timestamp = (int)(new DateTime(date_format($update_time, 'Y-m-d H:i:s')))->format('U'); // use the updated time
-
-            else { // sys.dm_db_index_usage_stats hasn't been updated since SQL Server was started
+            } else {
+                // sys.dm_db_index_usage_stats hasn't been updated since SQL Server was started
 
                 // check whether update_time has previously been cached
 
-                if (array_key_exists($table_name, $table_update_times)) // get the cached update_time
+                if (array_key_exists($table_name, $table_update_times)) { // get the cached update_time {
                     $timestamp = $table_update_times[$table_name];
 
-                else // set update_time to the current time and store it in the table_update_times cache
+                } else {
+                    // set update_time to the current time and store it in the table_update_times cache
                     $timestamp = $current_timestamp;
+                }
             }
 
             $table_update_times[$table_name] = $timestamp;
@@ -370,7 +379,9 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
              AND TABLE_NAME='$table'";
 
         try {
+
             return (bool)$this->read($sql, false);
+
         } catch (QcEx\TableReadException $ex) {
             $errors = sqlsrv_errors();
             throw new QcEx\TableReadException('information_schema.tables', $sql, self::SERVER_NAME, reset($errors)['message']);
@@ -461,8 +472,9 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
             throw new QcEx\TableReadException('information_schema', $sql, self::SERVER_NAME, reset($errors)['message']);
         }
 
-        while ($row = sqlsrv_fetch_array($result, SQLSRV_FETCH_ASSOC))
+        while ($row = sqlsrv_fetch_array($result, SQLSRV_FETCH_ASSOC)) {
             $data[] = $row['column_name'];
+        }
 
         $this->freeResultset($result);
 
@@ -485,7 +497,9 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
             $sql = "SELECT table_name FROM information_schema.tables WHERE TABLE_CATALOG LIKE '$db_name'";
            
             try {
+
                 $table_names[$db_name] = $this->readCol($sql);
+
             } catch (QcEx\TableReadException $ex) {
                 $errors = sqlsrv_errors();
                 throw new QcEx\TableReadException('information_schema', $sql, self::SERVER_NAME, reset($errors)['message']);

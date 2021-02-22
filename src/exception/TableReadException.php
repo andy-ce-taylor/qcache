@@ -13,10 +13,11 @@ class TableReadException extends TableQueryException
      */
     public function __construct($table, $sql, $db_type, $err_message='')
     {
-        if (stripos($err_message, "The user does not have permission") !== false)
+        if (stripos($err_message, "The user does not have permission") !== false) {
             $err_message = "Permission denied for table \"$table\"";
-
-        else $err_message = "\"$table\"";
+        } else {
+            $err_message = "\"$table\"";
+        }
 
         parent::__construct("Table read error: ", $sql, $db_type, $err_message);
     }
