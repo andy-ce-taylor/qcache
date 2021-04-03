@@ -7,6 +7,7 @@
 
 namespace acet\qcache\connector;
 
+use acet\qcache\Constants;
 use acet\qcache\exception as QcEx;
 use acet\qcache\SqlResultSet;
 use DateTime;
@@ -14,7 +15,7 @@ use Exception;
 use SQLite3;
 use SQLite3Result;
 
-class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
+class DbConnectorSQLite extends DbConnector implements DbConnectorIfc
 {
     const SERVER_NAME = 'SQLite3';
     const CACHED_UPDATES_TABLE = false;
@@ -60,7 +61,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
             }
         }
 
-        parent::__construct($qcache_config, $db_connection_data, self::CACHED_UPDATES_TABLE);
+        parent::__construct($qcache_config, $db_connection_data, self::SERVER_NAME, self::CACHED_UPDATES_TABLE);
     }
 
     /**
@@ -179,7 +180,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
     }
 
     /**
-     * Process a SELECT for a single columns and return as a numerically indexed array.
+     * Process a SELECT for a single column and return as a numerically indexed array.
      * @param string $sql
      * @return array
      * @throws QcEx\TableReadException
@@ -231,6 +232,25 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
     }
 
     /**
+     * Convert a native resultset into a SqlResultSet.
+     *
+     * @param SQLite3Result $native_resultset
+     * @return SqlResultSet
+     */
+    public function toSqlResultSet($native_resultset)
+    {
+        $data = [];
+
+        while ($row = $native_resultset->fetchArray(SQLITE3_ASSOC)) {
+            $data[] = $row;
+        }
+
+        $this->freeResultset($native_resultset);
+
+        return new SqlResultSet($data);
+    }
+
+    /**
      * @param sqlite3result $resultset
      * @return bool
      */
@@ -259,6 +279,8 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
         if (($result = @$this->conn->query($sql)) === false) {
             throw new QcEx\TableReadException('sqlite_master', $sql, self::SERVER_NAME);
         }
+
+        $table_update_times = [];
 
         while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
             // typical sqlite timestamp value: 2020-05-24 12:34:56
@@ -300,22 +322,20 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
     }
 
     /**
-     * Returns SQL to create the cache table.
+     * Returns SQL to create the cache information table.
      * @param string  $table_name
      * @return string
      */
-    public function getCreateTableSQL_cache($table_name)
+    public function getCreateTableSQL_cache_info($table_name)
     {
         return "DROP TABLE IF EXISTS $table_name;
                 CREATE TABLE $table_name (
-                    hash            CHAR(32)            NOT NULL PRIMARY KEY,
+                    hash            CHAR(32)        NOT NULL PRIMARY KEY,
                     access_time     INT(11)         DEFAULT NULL,
-                    script          VARCHAR(4000)   DEFAULT NULL,
                     av_microtime    REAL            DEFAULT NULL,
                     impressions     INT(11)         DEFAULT NULL,
                     description     VARCHAR(500)    DEFAULT NULL,
-                    tables_csv      VARCHAR(1000)   DEFAULT NULL,
-                    resultset       VARCHAR({$this->qcache_config['max_db_resultset_size']})
+                    tables_csv      VARCHAR(1000)   DEFAULT NULL
                 );";
     }
 
@@ -328,10 +348,10 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
     {
         return "DROP TABLE IF EXISTS $table_name;
                 CREATE TABLE $table_name (
-                    id              INT(11)             NOT NULL PRIMARY KEY,
+                    id              INT(11)         NOT NULL PRIMARY KEY,
                     time            INT(11)         DEFAULT NULL,
-                    context         CHAR(4)         DEFAULT NULL,
                     microtime       REAL            DEFAULT NULL,
+                    status          CHAR(8)         DEFAULT NULL,
                     hash            CHAR(32)        DEFAULT NULL
                 );";
     }
@@ -345,7 +365,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorInterface
     {
         return "DROP TABLE IF EXISTS $table_name;
                 CREATE TABLE $table_name (
-                    name            VARCHAR(80)         NOT NULL PRIMARY KEY,
+                    name            VARCHAR(80)     NOT NULL PRIMARY KEY,
                     update_time     INT(11)         DEFAULT NULL
                 );";
     }

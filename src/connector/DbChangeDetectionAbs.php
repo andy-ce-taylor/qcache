@@ -20,7 +20,7 @@ abstract class DbChangeDetectionAbs
      * @param mixed     $db_connection_cache
      * @return bool
      */
-    public function findTableChanges($since, $table_names, $db_connection_cache)
+    public function detectTableChanges($since, $table_names, $db_connection_cache)
     {
         if (($table_change_times = $this->getTableChangeTimes($table_names, $db_connection_cache)) === false) {
             // information isn't available or query failed

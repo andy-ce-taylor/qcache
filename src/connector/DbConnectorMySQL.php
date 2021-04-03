@@ -7,6 +7,7 @@
 
 namespace acet\qcache\connector;
 
+use acet\qcache\Constants;
 use acet\qcache\exception as QcEx;
 use acet\qcache\SqlResultSet;
 use DateTime;
@@ -15,20 +16,22 @@ use mysqli_driver;
 use mysqli_result;
 use mysqli_sql_exception;
 
-class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
+class DbConnectorMySQL extends DbConnector implements DbConnectorIfc
 {
     const SERVER_NAME = 'MySQL';
     const CACHED_UPDATES_TABLE = false;
+    const DFLT_CHAR_SET = 'latin1';
 
     /**
      * DbConnectorMySQL constructor.
      *
      * @param array    $qcache_config
-     * @param string[] $db_connection_data
+     * @param string[] $db_connection_data  - includes 'character_set' (such as 'utf8')
      * @throws QcEx\ConnectionException
      */
     function __construct($qcache_config, $db_connection_data)
     {
+        $this->isEnabled();
         static $_connection = [];
 
         $key = implode(':', $db_connection_data);
@@ -44,20 +47,27 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
             $driver->report_mode = MYSQLI_REPORT_STRICT;
 
             try {
-                $_connection[$key] = $this->conn = @new mysqli(
+
+                $this->conn = @new mysqli(
                     $db_connection_data['host'],
                     $db_connection_data['user'],
                     $db_connection_data['pass'],
                     $db_connection_data['name']
                 );
-            }
-            catch (mysqli_sql_exception $ex) {
-                $_connection_ok[$key] = false;
+
+                if (array_key_exists('character_set', $db_connection_data)) {
+                    $this->conn->set_charset($db_connection_data['character_set']);
+                }
+
+                $_connection[$key] = $this->conn;
+
+            } catch (mysqli_sql_exception $ex) {
+                $_connection[$key] = false;
                 throw new QcEx\ConnectionException(self::SERVER_NAME);
             }
         }
 
-        parent::__construct($qcache_config, $db_connection_data, self::CACHED_UPDATES_TABLE);
+        parent::__construct($qcache_config, $db_connection_data, self::SERVER_NAME, self::CACHED_UPDATES_TABLE);
     }
 
     /**
@@ -154,6 +164,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      * @param string  $sql
      * @param bool    $return_resultset
      * @return SqlResultSet|array
+     * @throws QcEx\TableReadException
      */
     public function read($sql, $return_resultset=true)
     {
@@ -177,7 +188,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
     }
 
     /**
-     * Process a SELECT for a single columns and return as a numerically indexed array.
+     * Process a SELECT for a single column and return as a numerically indexed array.
      * @param string $sql
      * @return array
      * @throws QcEx\TableReadException
@@ -220,9 +231,29 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
      */
     public function multi_write($sql)
     {
-        if ($this->conn->multi_query($sql) === false) {
-            throw new QcEx\TableWriteException('', $sql, self::SERVER_NAME, $this->conn->error);
+        $this->conn->multi_query($sql);
+
+        // flush results
+        while ($this->conn->next_result());
+    }
+
+    /**
+     * Convert a native resultset into a SqlResultSet.
+     *
+     * @param mysqli_result $native_resultset
+     * @return SqlResultSet
+     */
+    public function toSqlResultSet($native_resultset)
+    {
+        $data = [];
+
+        while ($row = $native_resultset->fetch_assoc()) {
+            $data[] = $row;
         }
+
+        $this->freeResultset($native_resultset);
+
+        return new SqlResultSet($data);
     }
 
     /**
@@ -262,6 +293,8 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
             throw new QcEx\TableReadException('information_schema.tables', $sql, self::SERVER_NAME, $this->conn->error);
         }
 
+        $table_update_times = [];
+
         while ($row = $result->fetch_assoc()) {
             // typical mysql timestamp value: 2020-05-24 12:34:56
             $update_time = (int)(new DateTime($row['UPDATE_TIME']))->format('U');
@@ -299,22 +332,20 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
     }
 
     /**
-     * Returns SQL to create the cache table.
+     * Returns SQL to create the cache information table.
      * @param string  $table_name
      * @return string
      */
-    public function getCreateTableSQL_cache($table_name)
+    public function getCreateTableSQL_cache_info($table_name)
     {
         return "DROP TABLE IF EXISTS $table_name;
                 CREATE TABLE $table_name (
-                    hash            CHAR(32)            NOT NULL PRIMARY KEY DEFAULT ' ',
+                    hash            CHAR(32)        NOT NULL PRIMARY KEY DEFAULT ' ',
                     access_time     INT(11)         DEFAULT NULL,
-                    script          VARCHAR(4000)   DEFAULT NULL,
                     av_microtime    FLOAT           DEFAULT NULL,
                     impressions     INT(11)         DEFAULT NULL,
                     description     VARCHAR(500)    DEFAULT NULL,
-                    tables_csv      VARCHAR(1000)   DEFAULT NULL,
-                    resultset       VARCHAR({$this->qcache_config['max_db_resultset_size']})
+                    tables_csv      VARCHAR(1000)   DEFAULT NULL
                 );";
     }
 
@@ -327,10 +358,10 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
     {
         return "DROP TABLE IF EXISTS $table_name;
                 CREATE TABLE $table_name (
-                    id              INT(11)             NOT NULL PRIMARY KEY AUTO_INCREMENT,
+                    id              INT(11)         NOT NULL PRIMARY KEY AUTO_INCREMENT,
                     time            INT(11)         DEFAULT NULL,
-                    context         CHAR(4)         DEFAULT NULL,
                     microtime       FLOAT           DEFAULT NULL,
+                    status          CHAR(8)         DEFAULT NULL,
                     hash            CHAR(32)        DEFAULT NULL
                 );";
     }
@@ -344,7 +375,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorInterface
     {
         return "DROP TABLE IF EXISTS $table_name;
                 CREATE TABLE $table_name (
-                    name            VARCHAR(80)         NOT NULL PRIMARY KEY DEFAULT ' ',
+                    name            VARCHAR(80)     NOT NULL PRIMARY KEY DEFAULT ' ',
                     update_time     INT(11)         DEFAULT NULL
                 );";
     }

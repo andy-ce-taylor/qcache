@@ -7,12 +7,17 @@
 
 namespace acet\qcache\connector;
 
+use acet\qcache\exception\TableQueryException;
+use acet\qcache\QCache;
 use acet\qcache\SqlResultSet;
 use mysqli;
 use SQLite3;
 
 class DbConnector extends DbChangeDetectionAbs
 {
+    /** @var string */
+    protected $server_name;
+
     /** @var mysqli|SQLite3|resource */
     protected $conn;
 
@@ -36,12 +41,14 @@ class DbConnector extends DbChangeDetectionAbs
      *
      * @param array    $qcache_config
      * @param string[] $db_connection_data
+     * @param string   $server_name
      * @param bool     $cached_updates_table
      */
-    function __construct($qcache_config, $db_connection_data, $cached_updates_table=false)
+    function __construct($qcache_config, $db_connection_data, $server_name, $cached_updates_table=false)
     {
         $this->qcache_config = $qcache_config;
         $this->db_name = $db_connection_data['name'];
+        $this->server_name = $server_name;
 
         $this->db_uses_cached_updates_table = $cached_updates_table;
 
@@ -53,10 +60,22 @@ class DbConnector extends DbChangeDetectionAbs
     // Getters
 
     public    function getConnection()                  { return $this->conn; }
+    public    function getServerName()                  { return $this->server_name; }
     public    function dbUsesCachedUpdatesTable()       { return $this->db_uses_cached_updates_table; }
     public    function isEnabled()                      { return $this->enabled; }
     protected function getDbName()                      { return $this->db_name; }
     protected function getTableUpdateTimesTableName()   { return $this->updates_table; }
+
+    /**
+     * Read-in and return an entire table.
+     *
+     * @param string $table
+     * @return array
+     */
+    public function getAll($table)
+    {
+        return $this->read("SELECT * FROM $table", false);
+    }
 
     /**
      * Returns a string that uniquely identifies a database connection.
@@ -81,8 +100,23 @@ class DbConnector extends DbChangeDetectionAbs
     }
 
     /**
+     * Perform a standard query on the DB connection.
+     * @param string $sql
+     * @return bool|\mysqli_result|\SQLite3Result
+     * @throws TableQueryException
+     */
+    public function query($sql)
+    {
+        if (($result = @$this->conn->query($sql)) === false) {
+            throw new TableQueryException($result, $sql, $this->server_name, $this->conn->error);
+        }
+
+        return $result;
+    }
+
+    /**
      * Read the table update times table.
-     * @param DbConnector $db_connection_cache
+     * @param mixed $db_connection_cache
      * @return array
      */
     public function readTableUpdateTimesTable($db_connection_cache)
@@ -91,9 +125,9 @@ class DbConnector extends DbChangeDetectionAbs
 
         $table_update_times = [];
 
-        /** @var SqlResultSet[] $rows */
-        if ($rows = $db_connection_cache->read("SELECT * FROM $table_update_times_table")) {
-            while ($row = $rows->fetch_assoc()) {
+        /** @var SqlResultSet $result */
+        if ($result = $db_connection_cache->read("SELECT * FROM $table_update_times_table")) {
+            while ($row = $result->fetch_assoc()) {
                 $table_update_times[$row['name']] = $row['update_time'];
             }
         }

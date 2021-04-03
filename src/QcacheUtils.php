@@ -8,9 +8,6 @@ namespace acet\qcache;
 
 class QcacheUtils
 {
-    const CONFIG_SIG_FILE = 'config_signature.txt';
-    const FOLDER_SIG_FILE = 'folder_signature.txt';
-
     /**
      * Returns a description suitable for passing to Qcache::query.
      *
@@ -26,81 +23,101 @@ class QcacheUtils
     }
 
     /**
-     * Determines whether method Qcache::query() would be successful in parsing table names from the given SQL
-     * statement or whether table names should be supplied as an argument.
+     * Cleans and returns the given SQL statement.
+     * Returns FALSE if it doesn't look like a SELECT statement.
      *
-     * Returns TRUE if Qcache is capable of parsing table names from the given SQL statement and is likely to
-     * significantly improve performance, otherwise FALSE.
+     * @param string $stmt
+     * @return string|bool
+     */
+    public static function getCleanedSelectStmt($stmt)
+    {
+        // trim and remove tabs/newlines/carriage-returns
+        $cleaned_stmt = str_replace(["\t", "\n", "\r"], ' ', trim($stmt));
+
+        // return FALSE if not a SELECT statement
+        if (substr(strtoupper($cleaned_stmt), 0, 7) != 'SELECT ') {
+            return false;
+        }
+
+        return $cleaned_stmt;
+    }
+
+    /**
+     * Examines the SQL statement and determines whether Qcache would be successful in parsing table names from the
+     * given SQL statement (returns TRUE) or whether table names should be supplied as an argument (returns FALSE).
      *
-     * Note: Qcache can handle ALL select statements - this function merely determines whether it needs
-     *       table name hints.
+     * Note: Qcache can handle ALL select statements.
+     *       This function merely determines whether it needs the developer to supply table name hints.
      *
-     * @param string $sql
+     * @param string  $stmt
+     * @param string  $hash
      * @return bool
      */
-    public static function cacheable($sql)
+    public static function isCacheable($stmt, $hash = '')
     {
         static $cacheable_l1c = [];
 
-        $hash = hash('md5', $sql);
+        if (!$hash) {
+            $hash = hash('md5', $stmt);
+        }
 
         // is the answer already known?
         if (array_key_exists($hash, $cacheable_l1c))
             return $cacheable_l1c[$hash];
 
-        $qstr_tmp_lc = strtolower(trim($sql));
+        $stmt_lc = strtolower(trim($stmt));
 
-        return $cacheable_l1c[$hash] = (                  // Qcache should handle this if the statement...
-            substr($qstr_tmp_lc, 0, 7) == 'select '   &&  // is a SELECT
-            strpos($qstr_tmp_lc, ' from ', 7)         &&  // and has a FROM
-            strpos($qstr_tmp_lc, ' join ', 7)         &&  // and has a JOIN
-            ! strpos($qstr_tmp_lc, 'count(', 7)       &&  // and doesn't have a count (unsupported)
-            ! strpos($qstr_tmp_lc, ' select ', 7)         // and doesn't have an embedded SELECT (unsupported)
-        );
+        // Qcache can handle this if the statement...
+        return $cacheable_l1c[$hash] =
+            substr($stmt_lc, 0, 7) == 'select ' &&   // is a SELECT
+            strpos($stmt_lc, ' from ', 7)       &&   // and has a FROM clause
+            !strpos($stmt_lc, ' select ', 7);        // and doesn't have an embedded SELECT (unsupported)
     }
 
     /**
-     * Returns the names of all tables participating in the given SQL statement.
+     * Returns the names of all tables participating in the given SELECT statement.
      *
-     * @param string $qstr
+     * @param string  $stmt
+     * @param string  $hash
      * @return string[]|bool
      */
-    public static function getTables($qstr)
+    public static function findTableNames($stmt, $hash = '')
     {
-        // remove escape sequences
-        $qstr_tmp = str_replace(["\t", "\r", "\n"], ' ', trim($qstr));
-        $qstr_tmp_lc = strtolower($qstr_tmp);
+        if (!self::isCacheable($stmt, $hash)) {
+            return false;
+        }
 
-        $from = strpos($qstr_tmp_lc, ' from ') + 6;
+        // work in lowercase
+        $stmt_lc = strtolower($stmt);
 
         // expect table names between FROM and... [first JOIN | LIMIT | WHERE] (whichever is first)
         $tables_str = '';
 
         // find JOINed tables
         $first_join_pos = false;
-        $join_p = $from;
-        while ($join_p = strpos($qstr_tmp_lc, ' join ', $join_p)) {
+        $join_p = $from = strpos($stmt_lc, ' from ') + 6;
+        while ($join_p = strpos($stmt_lc, ' join ', $join_p)) {
             if (!$first_join_pos) {
-                $tables_str = trim(substr($qstr_tmp, $from, $join_p - $from)) . ',';
+                $tables_str = trim(substr($stmt, $from, $join_p - $from)) . ',';
                 $first_join_pos = $join_p;
             }
             $join_p += 6;
-            $on_p = strpos($qstr_tmp_lc, ' on ', $join_p);
-            $tables_str .= substr($qstr_tmp, $join_p, $on_p - $join_p) . ',';
+            $on_p = strpos($stmt_lc, ' on ', $join_p);
+            $tables_str .= substr($stmt, $join_p, $on_p - $join_p) . ',';
         }
 
         // if no luck with JOINs, find WHERE/LIMIT
         if (!$first_join_pos) {
-            if (($where_p = strpos($qstr_tmp_lc, ' where ', $from)) === false) {
+            if (($where_p = strpos($stmt_lc, ' where ', $from)) === false) {
                 $where_p = PHP_INT_MAX;
             }
 
-            if (($limit_p = strpos($qstr_tmp_lc, ' limit ', $from)) === false) {
+            if (($limit_p = strpos($stmt_lc, ' limit ', $from)) === false) {
                 $limit_p = PHP_INT_MAX;
             }
 
             if ($first_p = min($where_p, $limit_p)) {
-                $tables_str = trim(substr($qstr_tmp, $from, $first_p - $from));
+                $tables_str = trim(substr($stmt, $from, $first_p - $from));
             }
         } else {
             $tables_str = trim($tables_str, ', ');
@@ -108,8 +125,8 @@ class QcacheUtils
 
         // split $tables_str into individual tables
         $tables_str = trim(str_replace(["'","`",'"'], '', $tables_str));
-        $tables = [];
 
+        $tables = [];
         foreach (explode(',', $tables_str) as $str) {
             if ($p = strpos($str = trim($str), ' ')) {
                 $str = substr($str, 0, $p);
@@ -124,198 +141,5 @@ class QcacheUtils
 
         // Oops! - SELECT with no tables found
         return false;
-    }
-
-    /**
-     * Removes cache records.
-     *
-     * @param string[]  $db_connection_cache
-     * @param string[]  $target_db_connector_sigs
-     * @param array     $qcache_config ['qcache_folder'],[]
-     */
-    public function clearCache($db_connection_cache, $target_db_connector_sigs, $qcache_config)
-    {
-        $cache_conn = Qcache::getConnection($qcache_config, $db_connection_cache);
-
-        foreach ($target_db_connector_sigs as $sig) {
-            $cache_conn->truncateTable($sig . '_cache');
-            $cache_conn->truncateTable($sig . '_logs');
-            $this->deleteCacheFiles($qcache_config['qcache_folder'], $sig);
-        }
-    }
-
-    /**
-     * Rebuild Qcache database tables if the configuration has changed, qcache has been updated or tables are missing.
-     *
-     * @param string[]   $db_connection_cache
-     * @param string[][] $target_db_connectors
-     * @param array      $qcache_config
-     * @throws exception\ConnectionException
-     */
-    public function verify($db_connection_cache, $target_db_connectors, $qcache_config)
-    {
-        $rebuild = false;
-
-        $target_db_connector_sigs = array_keys($target_db_connectors);
-
-        $folder_sig_file = $qcache_config['qcache_folder'] . '/' . self::FOLDER_SIG_FILE;
-        if ($folder_sig = self::detectQcacheSourceFileChanges($folder_sig_file)) {
-
-            foreach ($target_db_connector_sigs as $sig) {
-                self::deleteCacheFiles($qcache_config['qcache_folder'], $sig);
-            }
-
-            @unlink($folder_sig_file);
-            file_put_contents($folder_sig_file, $folder_sig);
-            $rebuild = true;
-        }
-
-        $config_sig_file = $qcache_config['qcache_folder'] . '/' . self::CONFIG_SIG_FILE;
-        if ($config_sig = self::detectQcacheConfigChanges($qcache_config, $config_sig_file)) {
-            @unlink($config_sig_file);
-            file_put_contents($config_sig_file, $config_sig);
-            $rebuild = true;
-        }
-
-        $cache_conn = Qcache::getConnection($qcache_config, $db_connection_cache);
-
-//echo "<pre>"; var_dump($cache_conn); echo "</pre>";
-
-        $db_name = $db_connection_cache['name'];
-
-        foreach ($target_db_connectors as $sig => $connector) {
-
-            $sql = '';
-
-            $table_name = $sig . '_cache';
-            if ($rebuild || !$cache_conn->tableExists($db_name, $table_name)) {
-                $sql .= $cache_conn->getCreateTableSQL_cache($table_name);
-            }
-
-            $table_name = $sig . '_logs';
-            if ($rebuild || !$cache_conn->tableExists($db_name, $table_name)) {
-                $sql .= $cache_conn->getCreateTableSQL_logs($table_name);
-            }
-
-            $target_conn = Qcache::getConnection($qcache_config, $connector);
-
-            if ($target_conn->dbUsesCachedUpdatesTable()) {
-                $table_name = $sig .'_table_update_times';
-                if ($rebuild || !$cache_conn->tableExists($db_name, $table_name)) {
-                    $sql .= $cache_conn->getCreateTableSQL_table_update_times($table_name);
-                }
-            }
-
-            if ($sql) {
-                $cache_conn->multi_write($sql);
-            }
-        }
-    }
-
-    /**
-     * Detects changes to the database schema and other files that are specific to this version of Qcache.
-     * Returns a folder signature if changes are detected, otherwise FALSE.
-     *
-     * @var string $folder_sig_file
-     * @return bool
-     */
-    private static function detectQcacheSourceFileChanges($folder_sig_file)
-    {
-        $folder_sig = self::getFolderSignature(realpath(__DIR__ . DIRECTORY_SEPARATOR . '..'));
-
-        $reported_folder_sig = '';
-
-        if (file_exists($folder_sig_file)) {
-            $reported_folder_sig = file_get_contents($folder_sig_file);
-        }
-
-        if ($reported_folder_sig != $folder_sig) {
-            return $folder_sig;
-        }
-
-        return false;
-    }
-
-    /**
-     * Detects changes to the configuration.
-     * Returns a config signature if changes are detected, otherwise FALSE.
-     *
-     * @var array  $qcache_config
-     * @var string $config_sig_file
-     * @return bool
-     */
-    private static function detectQcacheConfigChanges($qcache_config, $config_sig_file)
-    {
-        $config_sig = serialize($qcache_config);
-
-        $reported_config_sig = '';
-
-        if (file_exists($config_sig_file)) {
-            $reported_config_sig = file_get_contents($config_sig_file);
-        }
-
-        if ($reported_config_sig != $config_sig) {
-            return $config_sig;
-        }
-
-        return false;
-    }
-
-    /**
-     * Starting from the given $folder, recursively concatenate the checksum of the contents of folders.
-     *
-     * @param string $folder
-     * @return string
-     */
-    private static function getFolderSignature($folder)
-    {
-        if (!file_exists($folder)) {
-            return '';
-        }
-
-        $cs_str = '';
-
-        foreach (scandir($folder) as $file) {
-            if ($file[0] != '.') {
-                if (is_dir($path = "$folder/$file")) {
-                    $cs_str .= self::getFolderSignature($path);
-                } elseif (($content = @file_get_contents($path)) !== false) {
-                    $cs_str .= dechex(crc32($content));
-                }
-            }
-        }
-
-        return $cs_str;
-    }
-
-    /**
-     * Deletes cache files in the given $dir (whose names start with the given $file_name_prefix).
-     *
-     * @param string $dir
-     * @param string $prefix
-     */
-    private static function deleteCacheFiles($dir, $file_name_prefix)
-    {
-        if (!file_exists($dir)) {
-            return;
-        }
-
-        $slen = strlen($file_name_prefix);
-
-        foreach (array_diff(scandir($dir), ['.', '..']) as $file) {
-            if (substr($file, 0, $slen) == $file_name_prefix) {
-                unlink("$dir/$file");
-            }
-        }
-    }
-
-    /**
-     * @param string[] $conn_data
-     * @param string  $prefix
-     * @return string
-     */
-    public static function computeDbName($conn_data, $prefix='')
-    {
-        return $prefix . 'qcache_' . dechex(crc32(implode(':', array_values($conn_data))));
     }
 }

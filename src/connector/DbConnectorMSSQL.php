@@ -6,11 +6,12 @@
 
 namespace acet\qcache\connector;
 
+use acet\qcache\Constants;
 use acet\qcache\exception as QcEx;
 use acet\qcache\SqlResultSet;
 use DateTime;
 
-class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
+class DbConnectorMSSQL extends DbConnector implements DbConnectorIfc
 {
     const SERVER_NAME = 'Microsoft Server';
     const CACHED_UPDATES_TABLE = true;
@@ -47,9 +48,11 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
                 $_connection_ok[$key] = false;
                 throw new QcEx\ConnectionException(self::SERVER_NAME);
             }
+
+            ini_set('mssql.charset', 'utf-8');
         }
 
-        parent::__construct($qcache_config, $db_connection_data, self::CACHED_UPDATES_TABLE);
+        parent::__construct($qcache_config, $db_connection_data, self::SERVER_NAME, self::CACHED_UPDATES_TABLE);
     }
 
     /**
@@ -161,7 +164,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
     }
 
     /**
-     * Process a SELECT for a single columns and return as a numerically indexed array.
+     * Process a SELECT for a single column and return as a numerically indexed array.
      * @param string $sql
      * @return array
      * @throws QcEx\TableReadException
@@ -212,6 +215,25 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
     }
 
     /**
+     * Convert a native resultset into a SqlResultSet.
+     *
+     * @param resource $native_resultset
+     * @return SqlResultSet
+     */
+    public function toSqlResultSet($native_resultset)
+    {
+        $data = [];
+
+        while ($row = sqlsrv_fetch_array($native_resultset, SQLSRV_FETCH_ASSOC)) {
+            $data[] = $row;
+        }
+
+        $this->freeResultset($native_resultset);
+
+        return new SqlResultSet($data);
+    }
+
+    /**
      * @param resource $resultset
      * @return bool
      */
@@ -234,7 +256,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
      */
     public function getTableTimes($db_connection_cache, $tables=null)
     {
-        $table_update_times = $this->readTableUpdateTimesTable();
+        $table_update_times = $this->readTableUpdateTimesTable($db_connection_cache);
 
         $specific_tables_clause = $tables ? "AND OBJECT_ID IN (OBJECT_ID('".implode("'),OBJECT_ID('", $tables)."'))" : '';
 
@@ -389,11 +411,11 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
     }
 
     /**
-     * Returns SQL to create the cache table.
+     * Returns SQL to create the cache information table.
      * @param string  $table_name
      * @return string
      */
-    public function getCreateTableSQL_cache($table_name)
+    public function getCreateTableSQL_cache_info($table_name)
     {
         $table_name = 'dbo.' . $table_name;
 
@@ -401,14 +423,12 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
                     DROP TABLE $table_name;
                 END;
                 CREATE TABLE $table_name (
-                    hash            CHAR(32)            NOT NULL  PRIMARY KEY,
+                    hash            CHAR(32)        NOT NULL  PRIMARY KEY,
                     access_time     INT             DEFAULT NULL,
-                    script          VARCHAR(4000)   DEFAULT NULL,
                     av_microtime    FLOAT           DEFAULT NULL,
                     impressions     INT             DEFAULT NULL,
                     description     VARCHAR(500)    DEFAULT NULL,
-                    tables_csv      VARCHAR(1000)   DEFAULT NULL,
-                    resultset       VARCHAR({$this->qcache_config['max_db_resultset_size']})
+                    tables_csv      VARCHAR(1000)   DEFAULT NULL
                 );";
     }
 
@@ -426,8 +446,8 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
                 CREATE TABLE $table_name (
                     id              INT             IDENTITY(1,1) PRIMARY KEY,
                     time            INT             DEFAULT NULL,
-                    context         CHAR(4)         DEFAULT NULL,
                     microtime       FLOAT           DEFAULT NULL,
+                    status          CHAR(8)         DEFAULT NULL,
                     hash            CHAR(32)        DEFAULT NULL
                 );";
     }
@@ -444,7 +464,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorInterface
                     DROP TABLE $table_name;
                 END;
                 CREATE TABLE $table_name (
-                    name            VARCHAR(80)         NOT NULL  PRIMARY KEY,
+                    name            VARCHAR(80)     NOT NULL  PRIMARY KEY,
                     update_time     INT             DEFAULT NULL
                 );";
     }

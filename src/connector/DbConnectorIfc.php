@@ -5,7 +5,7 @@ namespace acet\qcache\connector;
 use acet\qcache\exception as QcEx;
 use acet\qcache\SqlResultSet;
 
-interface DbConnectorInterface
+interface DbConnectorIfc
 {
     /**
      * @return bool
@@ -82,6 +82,14 @@ interface DbConnectorInterface
     public function multi_write($sql);
 
     /**
+     * Convert a native resultset into a SqlResultSet.
+     *
+     * @param mixed $native_resultset
+     * @return SqlResultSet
+     */
+    public function toSqlResultSet($native_resultset);
+
+    /**
      * @param mixed $resultset
      * @return bool
      */
@@ -105,11 +113,11 @@ interface DbConnectorInterface
     public function tableExists($schema, $table);
 
     /**
-     * Returns SQL to create the cache table.
+     * Returns SQL to create the cache information table.
      * @param string  $table_name
      * @return string
      */
-    public function getCreateTableSQL_cache($table_name);
+    public function getCreateTableSQL_cache_info($table_name);
 
     /**
      * Returns SQL to create the logs table.
