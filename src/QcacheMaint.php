@@ -223,23 +223,23 @@ class QcacheMaint
     /**
      * ToDo
      *
-     * Remove cache files/db records in excess of $qcache_config['max_qcache_records'].
+     * Removes cache files/db records in excess of $max_qcache_records.
      * Removal criteria:
-     * - least used
+     * - least heavily used
      * - not used for a long time
-     * - likeliness to be resource intensive (complex stmt or large result set)
+     * - likely to be resource intensive (complex stmt or large result set)
      * - little difference (time-wise) between executing the query or retrieving from cache
      *
-     *
-     * @param null $file
-     * @param null $conn_data
      */
-    public static function maintenance($file = null, $conn_data = null)
+    public static function maintenance($cache_info_storage_type, $max_qcache_records)
     {
         $cache_columns = '';
-        $log_columns =   Qcache::LOG_COLUMNS;    //
+        $log_columns = Qcache::LOG_COLUMNS; // 'time, microtime, status, hash';
 
-        // $logs = read the log records
+
+        // $logs = read the log records - most recent ones first
+
+
         // scan through $logs backwards
         //
         // find the last 1000 lo

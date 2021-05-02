@@ -22,7 +22,7 @@ class Constants
     const DFLT_MAX_QCACHE_TRANSACTIONS =  8000;
 
     // QUERY_STATUS_nnn reports the status of the last Qcache query
-    const QUERY_STATUS_NULL =             0;    // unset
+    const QUERY_STATUS_NULL =             0;    // not set
     const QUERY_STATUS_ERROR =            1;    // query not completed because of an error
     const QUERY_STATUS_EXCLUDED =         2;    // statement is excluded
     const QUERY_STATUS_DISABLED =         3;    // Qcache is disabled

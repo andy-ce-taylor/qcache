@@ -9,7 +9,7 @@ use acet\qcache\exception as QcEx;
 class Qcache extends QcacheUtils
 {
     // cache info record columns (if cache info storage is set to db, additional column 'hash' becomes the first column)
-    const CACHE_INFO_COLUMNS = 'access_time, av_microtime, impressions, description, tables_csv';
+    const CACHE_INFO_COLUMNS = 'access_time, av_microsecs, impressions, description, tables_csv';
 
     // log record columns
     const LOG_COLUMNS = 'time, microtime, status, hash';
@@ -31,6 +31,9 @@ class Qcache extends QcacheUtils
 
     /** @var string */
     private $table_qc_logs;
+
+    /** @var string */
+    private $exclusion_file;
 
     /** @var mixed */
     private $db_connection_cache;
@@ -85,7 +88,11 @@ class Qcache extends QcacheUtils
         $this->table_qc_cache_info = $target_connection_sig . '_cache_info';
         $this->table_qc_logs = $target_connection_sig . '_logs';
 
-        $this->log_file = $this->qcache_config['qcache_folder'] . "/$target_connection_sig.log";
+        $this->exclusion_file = $qcache_config['qcache_folder'] .
+            '/' . $target_connection_sig .
+            '.' . Constants::EXCLUDE_STMT_FILE_EXT;
+
+        $this->log_file = $qcache_config['qcache_folder'] . "/$target_connection_sig.log";
     }
 
     /**
@@ -133,11 +140,7 @@ class Qcache extends QcacheUtils
         $hash = hash('md5', $stmt);
 
          // store in filesystem
-        $exclusion_file = $this->qcache_config['qcache_folder'] .
-            '/' . $this->target_connection_sig .
-            '.' . Constants::EXCLUDE_STMT_FILE_EXT;
-
-        if ($excluded = FileIO::read($exclusion_file, false, true)) {
+        if ($excluded = FileIO::read($this->exclusion_file, false, true)) {
             // ignore duplicates
             foreach ($excluded as $exc) {
                 if ($exc[0] == $hash) {
@@ -151,7 +154,7 @@ class Qcache extends QcacheUtils
         $excluded[] = [$hash, $slen, $stmt];
 
         FileIO::write(
-            $exclusion_file,
+            $this->exclusion_file,
             $excluded,
             0, true
         );
@@ -214,7 +217,7 @@ class Qcache extends QcacheUtils
         if ($this->query_status == Constants::QUERY_STATUS_CACHE_HIT) {
 
             // This SQL statement has been seen before
-            [$access_time, $av_microtime, $impressions, $description, $tables_csv] = $cache_info;
+            [$access_time, $av_microsecs, $impressions, $description, $tables_csv] = $cache_info;
 
             // determine whether cache is stale (tables have changed since last access time)
             $cache_is_stale = $this->db_connection_target->detectTableChanges($access_time, explode(',', $tables_csv), $this->db_connection_cache);
@@ -225,31 +228,32 @@ class Qcache extends QcacheUtils
                 // perform a fresh query and update cache
                 $start_microtime = microtime(true);
                 $resultset = $this->db_connection_target->read($stmt, true);
-                $elapsed_microtime = microtime(true) - $start_microtime;
+                $elapsed_microsecs = microtime(true) - $start_microtime;
 
-                $av_microtime = (float)($elapsed_microtime + $av_microtime * $impressions++) / $impressions;
+                $av_microsecs = (float)($elapsed_microsecs + $av_microsecs * $impressions++) / $impressions;
 
-                if ($this->cache_info_db) {
-
+                if ($this->cache_info_db) { // store cache info in database
                     $this->db_connection_cache->write(
                         "UPDATE $this->table_qc_cache_info ".
                         "SET access_time=$access_time,".
-                            "av_microtime=$av_microtime,".
+                            "av_microsecs=$av_microsecs,".
                             "impressions=$impressions ".
                         "WHERE hash='$hash'"
                     );
-                } else { // cache info stored in filesystem
+
+                } else { // store cache info to filesystem
                     FileIO::write(
                         $cache_info_file,
-                        [$access_time, $av_microtime, $impressions, $description, $tables_csv],
+                        [$access_time, $av_microsecs, $impressions, $description, $tables_csv],
                         0, true
                     );
+
                 }
 
                 // compress resultset and write it to the cache file
                 FileIO::write($cache_file, $resultset, $gz_compression_level, true);
 
-                $this->logTransactionStats($time_now, $elapsed_microtime, 'stale', $hash);
+                $this->logTransactionStats($time_now, $elapsed_microsecs, 'stale', $hash);
 
                 $this->query_status = Constants::QUERY_STATUS_CACHE_STALE;
 
@@ -276,11 +280,7 @@ class Qcache extends QcacheUtils
         }
 
         // Check whether the statement has been excluded
-        $exclusion_file = $this->qcache_config['qcache_folder'] .
-            '/' . $this->target_connection_sig .
-            '.' . Constants::EXCLUDE_STMT_FILE_EXT;
-
-        $exclusions = FileIO::read($exclusion_file, false, true);
+        $exclusions = FileIO::read($this->exclusion_file, false, true);
 
         if ($exclusions) {
             $stmt_lc = strtolower($stmt);
@@ -298,7 +298,7 @@ class Qcache extends QcacheUtils
         // get the resultset - time it
         $start_microtime = microtime(true); // restart microsecond timer
         $resultset = $this->db_connection_target->read($stmt, true);
-        $elapsed_microtime = microtime(true) - $start_microtime;
+        $elapsed_microsecs = microtime(true) - $start_microtime;
 
         // compress resultset and write it to the cache file
         FileIO::write($cache_file, $resultset, $gz_compression_level, true);
@@ -315,18 +315,18 @@ class Qcache extends QcacheUtils
 
             $this->db_connection_cache->write(
                 "INSERT INTO $this->table_qc_cache_info (hash, " . self::CACHE_INFO_COLUMNS . ') '.
-                "VALUES ('$hash', $time_now, $elapsed_microtime, 1, $description_esc, '$tables_csv')"
+                "VALUES ('$hash', $time_now, $elapsed_microsecs, 1, $description_esc, '$tables_csv')"
             );
 
         } else { // cache info stored in filesystem
             FileIO::write(
                 $cache_info_file,
-                [$time_now, $elapsed_microtime, 1, $description, $tables_csv],
+                [$time_now, $elapsed_microsecs, 1, $description, $tables_csv],
                 0, true
             );
         }
 
-        $this->logTransactionStats($time_now, $elapsed_microtime, 'miss', $hash);
+        $this->logTransactionStats($time_now, $elapsed_microsecs, 'miss', $hash);
         $this->query_status = Constants::QUERY_STATUS_CACHE_MISS;
 
         return $resultset;
@@ -403,10 +403,10 @@ class Qcache extends QcacheUtils
     /**
      * Logs transaction statistics.
      *
-     * @param $time
-     * @param $microtime
-     * @param $status
-     * @param $hash
+     * @param int $time
+     * @param float $microtime
+     * @param string $status
+     * @param string $hash
      */
     private function logTransactionStats($time, $microtime, $status, $hash)
     {

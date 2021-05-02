@@ -332,7 +332,7 @@ class DbConnectorSQLite extends DbConnector implements DbConnectorIfc
                 CREATE TABLE $table_name (
                     hash            CHAR(32)        NOT NULL PRIMARY KEY,
                     access_time     INT(11)         DEFAULT NULL,
-                    av_microtime    REAL            DEFAULT NULL,
+                    av_microsecs    REAL            DEFAULT NULL,
                     impressions     INT(11)         DEFAULT NULL,
                     description     VARCHAR(500)    DEFAULT NULL,
                     tables_csv      VARCHAR(1000)   DEFAULT NULL

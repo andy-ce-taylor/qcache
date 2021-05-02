@@ -425,7 +425,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorIfc
                 CREATE TABLE $table_name (
                     hash            CHAR(32)        NOT NULL  PRIMARY KEY,
                     access_time     INT             DEFAULT NULL,
-                    av_microtime    FLOAT           DEFAULT NULL,
+                    av_microsecs    FLOAT           DEFAULT NULL,
                     impressions     INT             DEFAULT NULL,
                     description     VARCHAR(500)    DEFAULT NULL,
                     tables_csv      VARCHAR(1000)   DEFAULT NULL
