@@ -7,8 +7,7 @@
 
 namespace acet\qcache\connector;
 
-use acet\qcache\exception\TableQueryException;
-use acet\qcache\QCache;
+use acet\qcache\exception as QcEx;
 use acet\qcache\SqlResultSet;
 use mysqli;
 use SQLite3;
@@ -67,6 +66,27 @@ class DbConnector extends DbChangeDetectionAbs
     protected function getTableUpdateTimesTableName()   { return $this->updates_table; }
 
     /**
+     * Returns the number of rows in the given table.
+     *
+     * @param string  $table
+     * @return int
+     */
+    public function getNumTableRows($table)
+    {
+        $sql = "SELECT COUNT(*) AS num_rows FROM $table";
+
+        if (($result = $this->conn->query($sql)) === false) {
+            throw new QcEx\TableReadException('', $sql, $this->server_name, $this->conn->error);
+        }
+
+        $num_rows = ($row = $result->fetch_assoc()) ? (int)$row['num_rows'] : 0;
+
+        $this->freeResultset($result);
+
+        return $num_rows;
+    }
+
+    /**
      * Read-in and return an entire table.
      *
      * @param string $table
@@ -100,15 +120,29 @@ class DbConnector extends DbChangeDetectionAbs
     }
 
     /**
+     * Delete a record from the given table.
+     * @param string $table
+     * @param string $where
+     */
+    public function delete($table, $where='')
+    {
+        if ($where) {
+            $where = " WHERE $where";
+        }
+
+        $this->conn->query("DELETE FROM $table" . $where);
+    }
+
+    /**
      * Perform a standard query on the DB connection.
      * @param string $sql
      * @return bool|\mysqli_result|\SQLite3Result
-     * @throws TableQueryException
+     * @throws QcEx\TableQueryException
      */
     public function query($sql)
     {
         if (($result = @$this->conn->query($sql)) === false) {
-            throw new TableQueryException($result, $sql, $this->server_name, $this->conn->error);
+            throw new QcEx\TableQueryException($result, $sql, $this->server_name, $this->conn->error);
         }
 
         return $result;
@@ -126,7 +160,7 @@ class DbConnector extends DbChangeDetectionAbs
         $table_update_times = [];
 
         /** @var SqlResultSet $result */
-        if ($result = $db_connection_cache->read("SELECT * FROM $table_update_times_table")) {
+        if ($result = $db_connection_cache->read("SELECT name, update_time FROM $table_update_times_table")) {
             while ($row = $result->fetch_assoc()) {
                 $table_update_times[$row['name']] = $row['update_time'];
             }

@@ -200,49 +200,69 @@ class QcacheMaint
     }
 
     /**
-     * @param string[] $conn_data
-     * @param string  $prefix
-     * @return string
-     */
-    public static function computeDbName($conn_data, $prefix='')
-    {
-        return $prefix . 'qcache_' . dechex(crc32(implode(':', array_values($conn_data))));
-    }
-
-
-    /**
-     * ToDo
-     *
-     * Maintenance - free up resources for old or seldom used data.
-     * Analysis - find out which statements produce the best results.
-     * Optimization - decache statements that are shown to be inefficient.
-     * Statistics - discover the amount of time saved.
-     */
-
-
-    /**
-     * ToDo
-     *
-     * Removes cache files/db records in excess of $max_qcache_records.
+     * Removes excessive entries in $cache_recs together with their associated cache files.
      * Removal criteria:
-     * - least heavily used
+     * - not used very often
      * - not used for a long time
-     * - likely to be resource intensive (complex stmt or large result set)
-     * - little difference (time-wise) between executing the query or retrieving from cache
+     * - not resource intensive (query completes quickly)
      *
+     * @param QCache $qc_instance
      */
-    public static function maintenance($cache_info_storage_type, $max_qcache_records)
+    public static function maintenance(QCache $qc_instance)
     {
-        $cache_columns = '';
-        $log_columns = Qcache::LOG_COLUMNS; // 'time, microtime, status, hash';
+        $config = $qc_instance->getQcacheConfig();
+        $use_db = $qc_instance->getCacheInfoToDb();
+
+        // Calculate the high/low water marks
+        $hwm = $config['max_qcache_records'] / (($use_db ? 0 : 1) + 2);
+        $lwm = (int)($hwm * Constants::LWM_TO_HWM_RATIO);
+
+        if (($num_cache_assets = $qc_instance->getNumCacheAssets()) < $hwm) {
+            // limit not reached - nothing to do
+            return;
+        }
+
+        // Remove excessive cache files
+        $cache_info_recs = $qc_instance->getCacheInfoRecords();
+
+        // Get hash indexed array of importance values
+        $importances = [];
+        foreach ($cache_info_recs as $ix => $rec) {
+            $importances[$ix] = $rec[Constants::CACHE_INFO_REC_IMPORTANCE];
+        }
+
+        // Sort importances - least important last
+        uasort(
+            $importances,
+            function ($a, $b) {
+                $diff = $b - $a;
+                return $diff < 0 ? -1 : ($diff > 0 ? 1 : 0);
+            }
+        );
+
+        $db_connection_cache = $qc_instance->getDbConnectCache();
+        $table_qc_cache_info = $qc_instance->getTableQcCacheInfo();
+        $filename_prefix = $config['qcache_folder'] . '/' . $qc_instance->getTargetConnectionSignature();
+
+        // Extract low importance elements (array position >= $lwm) and get their hashes
+        $obsolete_elem_hashes = array_keys(array_slice($cache_info_recs, $lwm, null, true));
+
+        // remove them
+        foreach ($obsolete_elem_hashes as $hash) {
+            $filename = $filename_prefix.$hash.'.';
+
+            if ($use_db) {
+                $db_connection_cache->delete($table_qc_cache_info, "hash='$hash'");
+            } else {
+                @unlink($filename . Constants::CACHE_INFO_FILE_EXT);
+            }
+
+            @unlink($filename . Constants::CACHE_FILE_EXT);
+            @unlink($filename . Constants::STMT_FILE_EXT);
 
 
-        // $logs = read the log records - most recent ones first
-
-
-        // scan through $logs backwards
-        //
-        // find the last 1000 lo
-        //   find the record that
+// uncomment if further processing of $cache_info_recs is needed
+//          unset($cache_info_recs[$hash]);
+        }
     }
 }

@@ -427,6 +427,7 @@ class DbConnectorMSSQL extends DbConnector implements DbConnectorIfc
                     access_time     INT             DEFAULT NULL,
                     av_microsecs    FLOAT           DEFAULT NULL,
                     impressions     INT             DEFAULT NULL,
+                    importance      FLOAT           DEFAULT NULL,
                     description     VARCHAR(500)    DEFAULT NULL,
                     tables_csv      VARCHAR(1000)   DEFAULT NULL
                 );";

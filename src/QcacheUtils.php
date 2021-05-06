@@ -43,6 +43,16 @@ class QcacheUtils
     }
 
     /**
+     * @param string[] $conn_data
+     * @param string  $prefix
+     * @return string
+     */
+    public static function computeDbName($conn_data, $prefix='')
+    {
+        return $prefix . 'qcache_' . dechex(crc32(implode(':', array_values($conn_data))));
+    }
+
+    /**
      * Examines the SQL statement and determines whether Qcache would be successful in parsing table names from the
      * given SQL statement (returns TRUE) or whether table names should be supplied as an argument (returns FALSE).
      *

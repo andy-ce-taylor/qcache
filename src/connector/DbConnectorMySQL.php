@@ -344,6 +344,7 @@ class DbConnectorMySQL extends DbConnector implements DbConnectorIfc
                     access_time     INT(11)         DEFAULT NULL,
                     av_microsecs    FLOAT           DEFAULT NULL,
                     impressions     INT(11)         DEFAULT NULL,
+                    importance      FLOAT           DEFAULT NULL,
                     description     VARCHAR(500)    DEFAULT NULL,
                     tables_csv      VARCHAR(1000)   DEFAULT NULL
                 );";
