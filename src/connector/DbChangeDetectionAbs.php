@@ -80,21 +80,26 @@ abstract class DbChangeDetectionAbs
      */
     public function getTableChangeTimes($table_names, $db_connection_cache)
     {
-        static $table_times_l1c;
+        static $table_times_l1c = [];
 
-        if (!$table_times_l1c) {
-            if (($table_times_l1c = $this->getTableTimes($db_connection_cache, $table_names)) === false) {
+        // process tables whose times have not been cached locally
+        if ($uncached_table_names = array_keys(array_diff_key(array_flip($table_names), $table_times_l1c))) {
+
+            if (($table_times = $this->getTableTimes($db_connection_cache, $uncached_table_names)) === false) {
                 return false;
             }
 
             // add the db time offset to each table change time
             $time_offset = $this->getDbTimeOffset();
 
-            foreach ($table_times_l1c as &$t) {
-                $t += $time_offset;
+            foreach ($table_times as $k => &$t) {
+                $table_times_l1c[$k] = $t = $t + $time_offset;
             }
+
+        } else {
+            $table_times = array_intersect_key($table_times_l1c, array_flip($table_names));
         }
 
-        return array_intersect_key($table_times_l1c, array_flip($table_names));
+        return $table_times;
     }
 }
